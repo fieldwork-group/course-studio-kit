@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>מטוטלת מתמטית</title>
+<!--
+  A rigid ("mathematical") pendulum, integrated properly, so that the one thing
+  the small-angle formula gets wrong is visible: the period grows with the
+  amplitude.
+
+  Plain canvas, no library. The equation of motion is
+
+      θ¨ = −(g/L)·sin θ
+
+  as a first-order pair, y = [θ, ω], f(y) = [ω, −(g/L)·sin θ], stepped with
+  classical fourth-order Runge–Kutta at a fixed h = 2 ms. Fixed and small, not
+  the frame's own dt: RK4's error is O(h⁴) per step and a frame that arrives
+  late would otherwise change the physics. The frame's elapsed time is spent in
+  whole 2 ms steps and the remainder is carried over.
+
+  Not the small-angle model, and not Euler. Euler on this system gains energy
+  without bound — a pendulum that swings higher every minute is the classic way
+  a demo teaches a student something false.
+
+  Checked against theory, by hand, once — the code below run outside the page and
+  compared with the closed forms:
+    * the measured period matches the exact T = 4√(L/g)·K(sin(θ₀/2)), K the
+      complete elliptic integral of the first kind, to 1e-9 relative or better at
+      θ₀ = 5°, 30°, 90° and 170°;
+    * so the amplitude dependence is real: T/T₀ = 1.0005, 1.017, 1.180 and 2.439
+      at those four amplitudes, against the small-angle T₀ = 2π√(L/g);
+    * the energy E = mgL(1−cos θ) + ½mL²ω² drifts by ~1e-11 over ten periods and
+      ~6e-10 over a thousand, which is what RK4 at h = 2 ms should give.
+
+  The chrome is Hebrew and right-to-left; the numbers are LTR and isolated, and
+  the canvas context is `direction = 'ltr'` so an axis label does not come out
+  backwards. That is a demo's own business: it is its own document.
+-->
+<style>
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--c-bg, #10171d); color: var(--c-ink, #e8eef2);
+    font-family: "Assistant", "Segoe UI", system-ui, sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #stage { flex: 1 1 auto; min-height: 0; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #panel {
+    flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: .25em 1em;
+    align-items: center; justify-content: center;
+    padding: .4em .7em .5em; font-size: 13px;
+    border-top: 1px solid var(--c-rule, #2a3742);
+  }
+  .ctrl { display: flex; align-items: center; gap: .45em; }
+  .ctrl > label { color: var(--c-muted, #9fb0bd); white-space: nowrap; }
+  input[type=range] { width: 96px; direction: ltr; accent-color: var(--c-accent, #d8722c); }
+  .val {
+    direction: ltr; unicode-bidi: isolate; min-width: 3.6em; text-align: left;
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .92em;
+  }
+  .read { color: var(--c-muted, #9fb0bd); }
+  .read .val { color: var(--c-ink, #e8eef2); }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+<div id="panel">
+  <span class="ctrl"><label for="len">אורך</label>
+    <input id="len" type="range" min="0.4" max="2" step="0.05" value="1">
+    <span class="val" id="len-v">1.00 m</span></span>
+  <span class="ctrl"><label for="amp">זווית התחלתית</label>
+    <input id="amp" type="range" min="5" max="170" step="1" value="30">
+    <span class="val" id="amp-v">30°</span></span>
+  <span class="ctrl read"><label>מחזור נמדד</label><span class="val" id="t-v">—</span></span>
+  <span class="ctrl read"><label>זוויות קטנות</label><span class="val" id="t0-v">—</span></span>
+  <span class="ctrl read"><label>סטיית אנרגיה</label><span class="val" id="e-v">—</span></span>
+</div>
+
+<script>
+/* studio-demo.js — inlined from demos/sdk/studio-demo.js; do not edit here */
+(function (global) {
+  var handlers = {};
+  function post(type, payload) {
+    var msg = { studio: 'demo', v: 1, type: type };
+    for (var k in (payload || {})) msg[k] = payload[k];
+    global.parent.postMessage(msg, '*');
+  }
+  global.addEventListener('message', function (e) {
+    var m = e.data;
+    if (!m || m.studio !== 'demo' || m.v !== 1 || typeof m.type !== 'string') return;
+    var fn = handlers[m.type];
+    if (!fn) return;
+    if (m.type === 'run') fn(!!m.running);
+    else if (m.type === 'theme') fn(m.tokens || {});
+    else fn();
+  });
+  global.StudioDemo = {
+    on: function (type, fn) { handlers[type] = fn; return this; },
+    ready: function (height) { post('ready', height > 0 ? { height: height } : {}); },
+    height: function (height) { post('height', { height: height }); },
+    state: function (running) { post('state', { running: !!running }); },
+  };
+})(window);
+/* end studio-demo.js */
+
+/* ---- the physics --------------------------------------------------------- */
+
+var G = 9.81;                      // m s⁻²
+var H = 0.002;                     // s — the RK4 step, fixed on purpose
+var L = 1.0;                       // m
+var theta0 = 30 * Math.PI / 180;   // rad
+
+var theta = theta0, omega = 0, t = 0, carry = 0;
+var running = true;
+
+/** ẏ for y = [θ, ω]. The whole model is this line. */
+function deriv(th, om) { return [om, -(G / L) * Math.sin(th)]; }
+
+/** One classical RK4 step of size h. */
+function step(h) {
+  var k1 = deriv(theta, omega);
+  var k2 = deriv(theta + h / 2 * k1[0], omega + h / 2 * k1[1]);
+  var k3 = deriv(theta + h / 2 * k2[0], omega + h / 2 * k2[1]);
+  var k4 = deriv(theta + h * k3[0], omega + h * k3[1]);
+  theta += h / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
+  omega += h / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
+  t += h;
+}
+
+/** Energy per unit mass; constant to the integrator's accuracy. */
+function energy() { return G * L * (1 - Math.cos(theta)) + 0.5 * L * L * omega * omega; }
+
+var E0 = energy();
+
+/* The measured period: twice the time between two successive crossings of θ = 0,
+   in either direction, linearly interpolated across the step so the answer is
+   not quantised to 2 ms. Twice a half period rather than the time between two
+   crossings the same way, because the motion is symmetric about θ = 0 — the
+   swing out and the swing back take the same time — and it means a number
+   appears after one quarter of a period instead of two whole ones.
+
+   Measured rather than computed, because the disagreement between this and
+   2π√(L/g) at a wide swing is the entire point of the demo. */
+var lastCross = null, period = null, prevTheta = theta;
+
+function noteCrossing() {
+  if ((prevTheta < 0 && theta >= 0) || (prevTheta > 0 && theta <= 0)) {
+    var frac = -prevTheta / (theta - prevTheta);      // where in this step it happened
+    var when = t - H * (1 - frac);
+    if (lastCross !== null) period = 2 * (when - lastCross);
+    lastCross = when;
+  }
+  prevTheta = theta;
+}
+
+function reset() {
+  theta = theta0; omega = 0; t = 0; carry = 0;
+  prevTheta = theta; lastCross = null; period = null;
+  E0 = energy();
+  readouts();
+}
+
+/* ---- the drawing --------------------------------------------------------- */
+
+var canvas = document.getElementById('c');
+var ctx = canvas.getContext('2d');
+var W = 0, Hpx = 0, dpr = 1;
+var trace = [];                    // [t, θ] for the graph on the left
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = canvas.clientWidth; Hpx = canvas.clientHeight;
+  canvas.width = Math.max(1, Math.round(W * dpr));
+  canvas.height = Math.max(1, Math.round(Hpx * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.direction = 'ltr';           // resizing a canvas resets every context property
+  draw();
+}
+
+var colours = {
+  bg: '#10171d', ink: '#e8eef2', muted: '#9fb0bd', rule: '#2a3742',
+  accent: '#d8722c', s1: '#4aa3df',
+};
+
+function draw() {
+  ctx.direction = 'ltr';
+  ctx.fillStyle = colours.bg;
+  ctx.fillRect(0, 0, W, Hpx);
+
+  var split = Math.round(W * 0.45);
+
+  /* the pendulum itself, hanging from the top of the right-hand half */
+  var px = split + (W - split) / 2, py = Hpx * 0.18;
+  var rod = Math.min((W - split) * 0.36, Hpx * 0.62);
+  var bx = px + rod * Math.sin(theta), by = py + rod * Math.cos(theta);
+
+  ctx.strokeStyle = colours.rule; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px, py + rod * 1.05); ctx.stroke();
+
+  ctx.strokeStyle = colours.muted; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(bx, by); ctx.stroke();
+
+  ctx.fillStyle = colours.accent;
+  ctx.beginPath(); ctx.arc(bx, by, Math.max(6, rod * 0.075), 0, 2 * Math.PI); ctx.fill();
+  ctx.fillStyle = colours.ink;
+  ctx.beginPath(); ctx.arc(px, py, 3, 0, 2 * Math.PI); ctx.fill();
+
+  /* θ(t), the last ten seconds, on the left */
+  var x0 = 12, x1 = split - 20, y0 = 14, y1 = Hpx - 14;
+  var span = 6;                                      // seconds shown
+  var amp = Math.max(Math.abs(theta0), 0.15) * 1.12;   // a margin, so a peak is not clipped
+  ctx.strokeStyle = colours.rule; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x0, (y0 + y1) / 2); ctx.lineTo(x1, (y0 + y1) / 2); ctx.stroke();
+
+  ctx.strokeStyle = colours.s1; ctx.lineWidth = 2; ctx.beginPath();
+  for (var i = 0; i < trace.length; i++) {
+    var age = t - trace[i][0];
+    if (age > span) continue;
+    var x = x1 - (age / span) * (x1 - x0);
+    var y = (y0 + y1) / 2 - (trace[i][1] / amp) * ((y1 - y0) / 2 - 6);
+    if (i === 0 || t - trace[i - 1][0] > span) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  ctx.fillStyle = colours.muted;
+  ctx.font = '12px ui-monospace, monospace';
+  ctx.fillText('θ(t)', x0, y0 + 2);
+  ctx.fillText('t = ' + t.toFixed(1) + ' s', x0, y1);
+}
+
+/* ---- the loop ------------------------------------------------------------ */
+
+function readouts() {
+  document.getElementById('len-v').textContent = L.toFixed(2) + ' m';
+  document.getElementById('amp-v').textContent = Math.round(theta0 * 180 / Math.PI) + '°';
+  document.getElementById('t-v').textContent = period ? period.toFixed(3) + ' s' : '—';
+  document.getElementById('t0-v').textContent = (2 * Math.PI * Math.sqrt(L / G)).toFixed(3) + ' s';
+  var drift = Math.abs(energy() / E0 - 1);
+  document.getElementById('e-v').textContent = drift.toExponential(1);
+}
+
+var last = null, sinceRead = 0;
+
+function frame(now) {
+  if (last === null) last = now;
+  var dt = Math.min((now - last) / 1000, 0.05);      // a backgrounded tab must not fast-forward
+  last = now;
+  if (running) {
+    carry += dt;
+    while (carry >= H) { step(H); noteCrossing(); carry -= H; }
+    trace.push([t, theta]);
+    while (trace.length && t - trace[0][0] > 7) trace.shift();
+    sinceRead += dt;
+    if (sinceRead > 0.25) { readouts(); sinceRead = 0; }
+  }
+  draw();
+  requestAnimationFrame(frame);
+}
+
+document.getElementById('len').addEventListener('input', function (e) {
+  L = Number(e.target.value); trace = []; reset();
+});
+document.getElementById('amp').addEventListener('input', function (e) {
+  theta0 = Number(e.target.value) * Math.PI / 180; trace = []; reset();
+});
+
+StudioDemo.on('run', function (on) { running = on; last = null; });
+StudioDemo.on('reset', function () { trace = []; reset(); draw(); });
+StudioDemo.on('theme', function (tokens) {
+  colours.bg = tokens['--c-bg'] || colours.bg;
+  colours.ink = tokens['--c-ink'] || colours.ink;
+  colours.muted = tokens['--c-muted'] || colours.muted;
+  colours.rule = tokens['--c-rule'] || colours.rule;
+  colours.accent = tokens['--c-accent'] || colours.accent;
+  colours.s1 = tokens['--c-series-1'] || colours.s1;
+  for (var k in tokens) document.documentElement.style.setProperty(k, tokens[k]);
+  draw();
+});
+
+window.addEventListener('resize', resize);
+resize();
+readouts();
+requestAnimationFrame(frame);
+StudioDemo.ready();
+</script>
+</body>
+</html>

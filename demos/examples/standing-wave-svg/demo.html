@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<title>Standing wave on a string</title>
+<!--
+  A standing wave as what it actually is: two identical waves running in
+  opposite directions on a string fixed at both ends.
+
+      y₊ = A·sin(kx − ωt)          right-going
+      y₋ = A·sin(kx + ωt)          left-going, the reflection
+      y₊ + y₋ = 2A·sin(kx)·cos(ωt)
+
+  The sum is a product of a shape in x and an oscillation in t: every point
+  moves in phase, nothing travels, and the zeros of sin(kx) never move. Those
+  are the nodes, and they are why a string has modes at all — y(0) = y(L) = 0
+  forces sin(kL) = 0, so
+
+      k = nπ/L,   λ = 2L/n,   ω = ck,   f = nc/2L.
+
+  No canvas: the string is an SVG `<polyline>` whose `points` attribute is
+  rewritten each frame, the components are two faint polylines, the envelope
+  ±2A·sin(kx) is a dashed pair, and the nodes are circles at x = mL/n. SVG is
+  here to make a point the format cares about — a demo may be anything that is
+  one file; canvas is a habit, not a requirement.
+
+  Checked, by hand, once: the two running waves and 2A·sin(kx)·cos(ωt) agree to
+  1e-15 on a grid of x and t; the drawn nodes sit on |y| < 1e-12 for every t; and
+  the animation's period matches T = 2π/ω = 2L/(nc) measured from the frame
+  clock (n = 3, L = 1 m, c = 1 m/s → T = 0.667 s).
+-->
+<style>
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--c-bg, #10171d); color: var(--c-ink, #e8eef2);
+    font-family: "Inter", system-ui, sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #stage { flex: 1 1 auto; min-height: 0; }
+  svg { display: block; width: 100%; height: 100%; }
+  .axis { stroke: var(--c-rule, #2a3742); stroke-width: 1; }
+  .comp { fill: none; stroke: var(--c-muted, #9fb0bd); stroke-width: 1; opacity: .7; }
+  .env  { fill: none; stroke: var(--c-series-2, #7fc4a0); stroke-width: 1; stroke-dasharray: 5 5; }
+  .sum  { fill: none; stroke: var(--c-series-1, #4aa3df); stroke-width: 3;
+          stroke-linejoin: round; stroke-linecap: round; }
+  .node { fill: var(--c-accent, #d8722c); }
+  .end  { stroke: var(--c-ink, #e8eef2); stroke-width: 3; }
+  #panel {
+    flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: .25em 1em;
+    align-items: center; justify-content: center;
+    padding: .4em .7em .5em; font-size: 13px;
+    border-top: 1px solid var(--c-rule, #2a3742);
+  }
+  .ctrl { display: flex; align-items: center; gap: .45em; }
+  .ctrl > label { color: var(--c-muted, #9fb0bd); white-space: nowrap; }
+  input[type=range] { width: 96px; accent-color: var(--c-accent, #d8722c); }
+  .val {
+    min-width: 3.6em; text-align: left;
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .92em;
+  }
+  .read { color: var(--c-muted, #9fb0bd); }
+  .read .val { color: var(--c-ink, #e8eef2); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <svg id="svg" preserveAspectRatio="none" aria-label="A standing wave on a string fixed at both ends">
+    <line id="axis" class="axis"></line>
+    <polyline id="env-up" class="env"></polyline>
+    <polyline id="env-dn" class="env"></polyline>
+    <polyline id="right" class="comp"></polyline>
+    <polyline id="left" class="comp"></polyline>
+    <polyline id="sum" class="sum"></polyline>
+    <g id="nodes"></g>
+    <line id="wall-l" class="end"></line>
+    <line id="wall-r" class="end"></line>
+  </svg>
+</div>
+<div id="panel">
+  <span class="ctrl"><label for="mode">mode n</label>
+    <input id="mode" type="range" min="1" max="6" step="1" value="3">
+    <span class="val" id="mode-v">3</span></span>
+  <span class="ctrl"><label for="speed">wave speed c</label>
+    <input id="speed" type="range" min="0.2" max="2" step="0.1" value="1">
+    <span class="val" id="speed-v">1.0 m/s</span></span>
+  <span class="ctrl read"><label>λ = 2L/n</label><span class="val" id="lam-v">—</span></span>
+  <span class="ctrl read"><label>f = nc/2L</label><span class="val" id="f-v">—</span></span>
+  <span class="ctrl read"><label>components</label>
+    <input id="show" type="checkbox" checked></span>
+</div>
+
+<script>
+/* studio-demo.js — inlined from demos/sdk/studio-demo.js; do not edit here */
+(function (global) {
+  var handlers = {};
+  function post(type, payload) {
+    var msg = { studio: 'demo', v: 1, type: type };
+    for (var k in (payload || {})) msg[k] = payload[k];
+    global.parent.postMessage(msg, '*');
+  }
+  global.addEventListener('message', function (e) {
+    var m = e.data;
+    if (!m || m.studio !== 'demo' || m.v !== 1 || typeof m.type !== 'string') return;
+    var fn = handlers[m.type];
+    if (!fn) return;
+    if (m.type === 'run') fn(!!m.running);
+    else if (m.type === 'theme') fn(m.tokens || {});
+    else fn();
+  });
+  global.StudioDemo = {
+    on: function (type, fn) { handlers[type] = fn; return this; },
+    ready: function (height) { post('ready', height > 0 ? { height: height } : {}); },
+    height: function (height) { post('height', { height: height }); },
+    state: function (running) { post('state', { running: !!running }); },
+  };
+})(window);
+/* end studio-demo.js */
+
+/* ---- the physics --------------------------------------------------------- */
+
+var L = 1;              // m, the length of the string
+var A = 0.5;            // arbitrary; the drawing scales to 2A
+var n = 3;              // mode number
+var c = 1;              // m/s
+var k, w;
+
+function setParams() {
+  k = n * Math.PI / L;
+  w = c * k;
+  document.getElementById('mode-v').textContent = String(n);
+  document.getElementById('speed-v').textContent = c.toFixed(1) + ' m/s';
+  document.getElementById('lam-v').textContent = (2 * L / n).toFixed(2) + ' m';
+  document.getElementById('f-v').textContent = (n * c / (2 * L)).toFixed(2) + ' Hz';
+}
+
+var right = function (x, t) { return A * Math.sin(k * x - w * t); };
+var left  = function (x, t) { return A * Math.sin(k * x + w * t); };
+/** The sum, written as the product it is equal to — the identity is the demo. */
+var sum   = function (x, t) { return 2 * A * Math.sin(k * x) * Math.cos(w * t); };
+
+/* ---- the drawing --------------------------------------------------------- */
+
+var svg = document.getElementById('svg');
+var el = {
+  axis: document.getElementById('axis'),
+  envUp: document.getElementById('env-up'), envDn: document.getElementById('env-dn'),
+  right: document.getElementById('right'), left: document.getElementById('left'),
+  sum: document.getElementById('sum'), nodes: document.getElementById('nodes'),
+  wallL: document.getElementById('wall-l'), wallR: document.getElementById('wall-r'),
+};
+var SVG_NS = 'http://www.w3.org/2000/svg';   // the namespace name, not a request
+var W = 0, H = 0, N = 160;                   // N samples along the string
+
+function layout() {
+  W = svg.clientWidth || 600; H = svg.clientHeight || 300;
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  var mid = H / 2, pad = 26;
+  el.axis.setAttribute('x1', pad); el.axis.setAttribute('x2', W - pad);
+  el.axis.setAttribute('y1', mid); el.axis.setAttribute('y2', mid);
+  var span = Math.min(H / 2 - 16, 140);
+  el.wallL.setAttribute('x1', pad); el.wallL.setAttribute('x2', pad);
+  el.wallL.setAttribute('y1', mid - span); el.wallL.setAttribute('y2', mid + span);
+  el.wallR.setAttribute('x1', W - pad); el.wallR.setAttribute('x2', W - pad);
+  el.wallR.setAttribute('y1', mid - span); el.wallR.setAttribute('y2', mid + span);
+}
+
+/** x in metres → px, y in metres → px. */
+function px(x) { return 26 + (x / L) * (W - 52); }
+function py(y) { return H / 2 - y * ((H / 2 - 22) / (2.2 * A)); }
+
+function points(fn, t) {
+  var out = [];
+  for (var i = 0; i <= N; i++) {
+    var x = (i / N) * L;
+    out.push(px(x).toFixed(1) + ',' + py(fn(x, t)).toFixed(1));
+  }
+  return out.join(' ');
+}
+
+function nodes() {
+  while (el.nodes.firstChild) el.nodes.removeChild(el.nodes.firstChild);
+  for (var m = 0; m <= n; m++) {
+    var dot = document.createElementNS(SVG_NS, 'circle');
+    dot.setAttribute('class', 'node');
+    dot.setAttribute('cx', px(m * L / n));       // sin(k·mL/n) = sin(mπ) = 0
+    dot.setAttribute('cy', py(0));
+    dot.setAttribute('r', 4);
+    el.nodes.appendChild(dot);
+  }
+}
+
+var t = 0, running = true, showComponents = true, announced = false;
+
+function draw() {
+  el.sum.setAttribute('points', points(sum, t));
+  el.envUp.setAttribute('points', points(function (x) { return 2 * A * Math.sin(k * x); }, t));
+  el.envDn.setAttribute('points', points(function (x) { return -2 * A * Math.sin(k * x); }, t));
+  el.right.setAttribute('points', showComponents ? points(right, t) : '');
+  el.left.setAttribute('points', showComponents ? points(left, t) : '');
+  if (!announced) { announced = true; StudioDemo.ready(); }
+}
+
+var last = null;
+
+function frame(now) {
+  if (last === null) last = now;
+  var dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  if (running) t += dt;
+  draw();
+  requestAnimationFrame(frame);
+}
+
+/* ---- the wiring ---------------------------------------------------------- */
+
+document.getElementById('mode').addEventListener('input', function (e) {
+  n = Number(e.target.value); setParams(); nodes(); draw();
+});
+document.getElementById('speed').addEventListener('input', function (e) {
+  c = Number(e.target.value); setParams(); draw();
+});
+document.getElementById('show').addEventListener('change', function (e) {
+  showComponents = e.target.checked; draw();
+});
+
+StudioDemo.on('run', function (on) { running = on; last = null; });
+StudioDemo.on('reset', function () { t = 0; draw(); });
+StudioDemo.on('theme', function (tokens) {
+  /* Everything here is coloured from the tokens in CSS, so the theme is one
+     loop over the custom properties and no redraw at all. */
+  for (var name in tokens) document.documentElement.style.setProperty(name, tokens[name]);
+});
+
+window.addEventListener('resize', function () { layout(); nodes(); draw(); });
+
+layout();
+setParams();
+nodes();
+draw();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

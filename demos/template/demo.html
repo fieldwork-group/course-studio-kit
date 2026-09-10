@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<title>Template demo</title>
+<!--
+  The starting point for a user demo. Copy this folder, keep the three file
+  names, and replace the marked part.
+
+  It runs exactly as it is: a square slides across a canvas, the play, pause and
+  reset buttons of the page around it work, and the course's colours arrive and
+  are used. That matters more than it sounds — when your demo does not come up,
+  the first question is whether the *format* is wrong or your physics is, and a
+  template that already works answers it.
+
+  The two rules that catch everyone out:
+
+    * No external request of any kind. No `<script src>` to a CDN, no web font,
+      no image URL. Everything is in this file or a `data:` URI, because the
+      frame runs under `default-src 'none'` with no `connect-src` and a browser
+      will simply refuse the request.
+    * `dir="ltr"` on the document above, or `ctx.direction = 'ltr'` on the
+      canvas. A lecture page may be right-to-left and canvas text inherits the
+      direction of its document, which turns `t = -1.1` into `1.1- = t`.
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: var(--bg, #10171d); }
+  canvas { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<canvas id="c" width="800" height="400"></canvas>
+
+<script>
+/* studio-demo.js — inlined from demos/sdk/studio-demo.js; do not edit here */
+(function (global) {
+  var handlers = {};
+  function post(type, payload) {
+    var msg = { studio: 'demo', v: 1, type: type };
+    for (var k in (payload || {})) msg[k] = payload[k];
+    global.parent.postMessage(msg, '*');
+  }
+  global.addEventListener('message', function (e) {
+    var m = e.data;
+    if (!m || m.studio !== 'demo' || m.v !== 1 || typeof m.type !== 'string') return;
+    var fn = handlers[m.type];
+    if (!fn) return;
+    if (m.type === 'run') fn(!!m.running);
+    else if (m.type === 'theme') fn(m.tokens || {});
+    else fn();
+  });
+  global.StudioDemo = {
+    on: function (type, fn) { handlers[type] = fn; return this; },
+    ready: function (height) { post('ready', height > 0 ? { height: height } : {}); },
+    height: function (height) { post('height', { height: height }); },
+    state: function (running) { post('state', { running: !!running }); },
+  };
+})(window);
+/* end studio-demo.js */
+
+/* ---- your demo starts here ---------------------------------------------- */
+
+var canvas = document.getElementById('c');
+var ctx = canvas.getContext('2d');
+ctx.direction = 'ltr';
+
+var colours = { bg: '#10171d', ink: '#e8eef2', accent: '#d8722c' };
+var running = true;
+var t = 0;
+
+/** One frame. Everything the demo shows is drawn from `t` and nothing else,
+ *  which is what makes `reset` a single assignment. */
+function draw() {
+  ctx.fillStyle = colours.bg;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  var x = 60 + (Math.sin(t) * 0.5 + 0.5) * (canvas.width - 240);
+  ctx.fillStyle = colours.accent;
+  ctx.fillRect(x, 140, 120, 120);
+
+  ctx.fillStyle = colours.ink;
+  ctx.font = '18px system-ui, sans-serif';
+  ctx.fillText('t = ' + t.toFixed(1) + ' s', 20, 34);
+}
+
+function frame() {
+  if (running) t += 0.02;
+  draw();
+  requestAnimationFrame(frame);
+}
+
+StudioDemo.on('run', function (on) { running = on; });
+StudioDemo.on('reset', function () { t = 0; draw(); });
+StudioDemo.on('theme', function (tokens) {
+  colours.bg = tokens['--c-bg'] || colours.bg;
+  colours.ink = tokens['--c-ink'] || colours.ink;
+  colours.accent = tokens['--c-accent'] || colours.accent;
+  document.documentElement.style.setProperty('--bg', colours.bg);
+  draw();
+});
+
+draw();
+requestAnimationFrame(frame);
+/* The still fades only now. Say it once, when there is something to look at. */
+StudioDemo.ready(400);
+</script>
+</body>
+</html>

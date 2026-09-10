@@ -1,0 +1,9 @@
+{
+  "slug": "template",
+  "title": "Template demo",
+  "description": "The starting point: a square that answers play, pause, reset and the course theme.",
+  "aspect": 0.5,
+  "author": "Course Studio kit",
+  "version": "1.0.0",
+  "lang": "en"
+}

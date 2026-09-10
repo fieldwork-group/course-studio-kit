@@ -1,0 +1,9 @@
+{
+  "slug": "pendulum-canvas",
+  "title": "מטוטלת מתמטית — מחזור תלוי משרעת",
+  "description": "מטוטלת קשיחה באינטגרציית RK4: ככל שהמשרעת גדלה, המחזור הנמדד מתרחק מקירוב הזוויות הקטנות.",
+  "aspect": 0.5,
+  "author": "Course Studio kit",
+  "version": "1.0.0",
+  "lang": "he"
+}

@@ -1,0 +1,9 @@
+{
+  "slug": "superposition-p5",
+  "title": "Superposition: phase and group velocity",
+  "description": "Two travelling waves of nearly equal wavenumber on deep water. The crests move at ω/k, the envelope at Δω/Δk — half as fast.",
+  "aspect": 0.5,
+  "author": "Course Studio kit",
+  "version": "1.0.0",
+  "lang": "en"
+}

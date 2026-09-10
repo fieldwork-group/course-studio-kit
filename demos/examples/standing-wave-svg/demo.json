@@ -1,0 +1,9 @@
+{
+  "slug": "standing-wave-svg",
+  "title": "Standing wave on a string",
+  "description": "Two counter-propagating waves add to 2A·sin(kx)·cos(ωt). Nothing travels, the nodes never move, and the string is an SVG polyline.",
+  "aspect": 0.5,
+  "author": "Course Studio kit",
+  "version": "1.0.0",
+  "lang": "en"
+}
