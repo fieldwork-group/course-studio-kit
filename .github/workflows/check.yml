@@ -1,0 +1,29 @@
+# Every demo passes the lint, the gallery builds, and its frames are sandboxed.
+#
+# This is the whole gate on a contributed demo: the format, the caps, and the one
+# claim an author cannot check by looking — that the file makes no request. The
+# physics is not reviewed, by decision; see docs/demos/authoring.md.
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # The lint mounts every demo in a real browser; only Chromium is needed.
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm test
