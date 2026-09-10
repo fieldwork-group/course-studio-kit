@@ -44,6 +44,47 @@ cannot reach a student's browser, so a save carrying markup it would not emit is
 refused with `422 unsafe_markup` naming the blocks and what was wrong. That is a
 refusal, not a cleanup: your content did not land.
 
+## Two ways in
+
+**As a connector, with no token at all.** The studio runs an MCP server at
+`https://studio.fieldwork-group.com/api/mcp`. Add that URL as a custom
+connector, sign in with your studio email and password, and the tools below
+become available in the conversation. Nothing is installed and no credential
+ends up on your machine — Claude keeps the tokens and the model never sees
+them. This is the way for Claude Desktop, claude.ai, mobile and Cowork, and it
+is the way for Claude Code too.
+
+- **Claude Desktop · claude.ai · mobile · Cowork** — *Settings → Connectors →
+  Add custom connector*, paste the URL, open *Advanced settings* and enter the
+  **client id** and **client secret** the studio's administrator gives you.
+  (Cognito has no dynamic client registration, so the client is pre-registered;
+  those two values are the whole of the setup.) Click *Connect*, sign in on the
+  page that opens, and approve the scopes.
+- **Claude Code** —
+
+  ```bash
+  claude mcp add --transport http studio https://studio.fieldwork-group.com/api/mcp
+  ```
+
+  and `/mcp` in the session to sign in. If the browser round trip fails — the
+  loopback callback port is not guaranteed to be one Cognito has been told
+  about — use a token instead:
+
+  ```bash
+  claude mcp add --transport http studio https://studio.fieldwork-group.com/api/mcp \
+    --header 'Authorization: Bearer cst_…'
+  ```
+
+The tools are named `studio_*`; `studio_whoami` first, then `studio_guides`.
+Read the resources `studio://guide` (this file) and `studio://vocabulary`
+before your first write. Everything the tools do goes through the routes below,
+so the rest of this document is the contract either way — a 412 through a tool
+is the same 412, carrying the same current ETag.
+
+**As a program, with a token.** `cst_…`, minted in the studio or with
+`studio tokens create`, sent as `Authorization: Bearer`. This is the way for a
+script, for CI and for a shell agent. The routes are below.
+
 ## The session
 
 ```
@@ -221,6 +262,34 @@ are unsure about, quote the sentence, and say what you would do.
 
 Every error is `{ error, message, … }`. `error` is stable and worth branching
 on; `message` is a sentence for a person.
+
+## The same loop, through the tools
+
+```
+studio_whoami                                     → actor, groups, scopes, courses
+studio_guides { course: "waves" }                 → conventions, glossary, style, syllabus
+studio_get_lecture { course, lecture, sections: "all" }
+    → { manifest, manifestEtag, notes: { etag, bytes, sections, fragment }, openNotes }
+studio_save_notes { course, lecture, fragment, etag, changedBlocks: ["K7F2Q9X1M0"] }
+studio_preview_url { course, lecture }            → a link for the person to open
+studio_publish { course, lecture }                → { job }   ← ask them first
+studio_publish_status { course, lecture, job }
+```
+
+Three things about the tools that are not obvious from the names:
+
+- **`studio_get_lecture` does not return the fragment unless you ask.** A
+  lecture is 60 KB of Hebrew, which is about twenty thousand tokens, and a
+  client that truncates a tool result cuts it mid-formula. The default answer
+  is the manifest, the ETags and a list of the sections with their sizes; pass
+  `sections: ["s3"]` to read one or `sections: "all"` for the whole thing —
+  which is what a save needs, because a save sends every byte.
+- **`studio_upload_figure` takes the bytes inline**, base64, up to 5 MB. There
+  is no presign step through the tools: the two-step flow exists so a browser
+  need not send a megabyte through the API, and you are already holding it.
+- **`studio_publish` is two tools.** The first answers with a job id and the
+  pages are already live when it does; what is still running is the PDF. Poll
+  the second.
 
 ## The whole loop, once
 

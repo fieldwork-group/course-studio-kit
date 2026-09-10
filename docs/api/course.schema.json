@@ -17,6 +17,18 @@
       "type": "string",
       "description": "the Hebrew name of the course"
     },
+    "lang": {
+      "type": "string",
+      "description": "the course language, e.g. `he` — written by the studio since the language switch (2026-09-09)"
+    },
+    "dir": {
+      "type": "string",
+      "enum": [
+        "rtl",
+        "ltr"
+      ],
+      "description": "the reading direction of the course pages"
+    },
     "titleEn": {
       "type": [
         "string",

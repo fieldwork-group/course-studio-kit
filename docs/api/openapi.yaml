@@ -118,6 +118,13 @@ paths:
                     items: { type: string, enum: [authors, viewers] }
                   tenant: { type: string }
                   dev: { type: boolean, description: 'true on the local dev server' }
+                  connector:
+                    type: string
+                    description: |
+                      The OAuth client id, when the caller came in through
+                      `POST /mcp` as a connector. Absent for a session and for
+                      an access token. Public by design; the secret beside it
+                      is not, and appears in no response at all.
         '401': { $ref: '#/components/responses/unauthenticated' }
 
   /courses:
@@ -645,6 +652,34 @@ paths:
             image/svg+xml: { schema: { type: string } }
         '400': { $ref: '#/components/responses/badRequest' }
         '404': { $ref: '#/components/responses/notFound' }
+    put:
+      tags: [lectures]
+      operationId: putFigure
+      summary: Store a figure directly, bytes in the request.
+      description: |
+        The other way to put a figure beside a lecture. The two-step presign
+        (`POST …/uploads`) is right for a browser, which should not send a
+        megabyte through the API when it can post it to S3; it is wrong for an
+        agent, which is already holding the bytes and cannot post a multipart
+        form to a URL it was handed. Same allow-list, same 5 MB cap, same
+        `figure.upload` event.
+
+        The `Content-Type` is the declared type and is checked against the
+        extension: PNG, SVG or JPEG here, `application/json` under `data/`.
+      requestBody:
+        required: true
+        content:
+          image/png: { schema: { type: string, format: binary } }
+          image/jpeg: { schema: { type: string, format: binary } }
+          image/svg+xml: { schema: { type: string } }
+      responses:
+        '200':
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoredAsset' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
 
   /courses/{c}/lectures/{l}/data/{name}:
     parameters:
@@ -663,6 +698,24 @@ paths:
               schema: { type: object }
         '400': { $ref: '#/components/responses/badRequest' }
         '404': { $ref: '#/components/responses/notFound' }
+    put:
+      tags: [lectures]
+      operationId: putData
+      summary: Store a data file directly, bytes in the request.
+      description: |
+        `putFigure` for `application/json` under `data/`. Same cap, same event.
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { type: object } }
+      responses:
+        '200':
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoredAsset' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
 
   /courses/{c}/lectures/{l}/preview:
     parameters:
@@ -1508,6 +1561,192 @@ paths:
         '403': { $ref: '#/components/responses/forbidden' }
         '404': { $ref: '#/components/responses/notFound' }
 
+  /mcp:
+    post:
+      tags: [mcp]
+      operationId: postMcp
+      summary: The MCP server — one JSON-RPC request in, one JSON response out.
+      security: []
+      description: |
+        **Streamable HTTP, stateless** (spec revision 2026-07-28, which dropped
+        sessions and the server-initiated stream). There is no `Mcp-Session-Id`
+        and there is nothing to keep between calls, which is what lets this be
+        one Lambda behind a gateway that closes a connection at thirty seconds.
+
+        This route authenticates **itself**, which is why `security` here is
+        empty rather than the document's default: an HTTP API's authorizer
+        cannot put a header on its own 401, and OAuth discovery begins with a
+        401 carrying
+        `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource/api/mcp"`.
+        Two credentials are accepted — a Cognito **access** token from the
+        `studio-connector` app client, whose scopes `studio/read`,
+        `studio/write` and `studio/publish` become this API's `read`, `write`
+        and `publish`; and a `cst_…` studio access token, for a shell agent
+        that would rather speak MCP than HTTP.
+
+        Every tool is dispatched back through this API's own router with the
+        verified identity, so the group rule, the scopes, the course grants,
+        the ETag rules, the sanitiser and the event log apply to a tool call
+        exactly as they apply to a request off the wire. Events carry
+        `via: { connector }` and `client: mcp/<sdk version>`.
+
+        A body of notifications alone is answered `202` with no body.
+      parameters:
+        - name: MCP-Protocol-Version
+          in: header
+          required: false
+          description: The revision the client speaks. Echoed back on the response.
+          schema: { type: string }
+        - name: Mcp-Method
+          in: header
+          required: false
+          description: A hint naming the JSON-RPC method, for logs and rate limits.
+          schema: { type: string }
+        - name: Mcp-Name
+          in: header
+          required: false
+          description: A hint naming the tool or resource, for logs and rate limits.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              description: One JSON-RPC 2.0 message, or an array of them.
+              oneOf:
+                - type: object
+                - type: array
+                  items: { type: object }
+      responses:
+        '200':
+          description: The JSON-RPC response.
+          headers:
+            MCP-Protocol-Version:
+              description: The revision the client declared, echoed.
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                  - type: array
+                    items: { type: object }
+        '202':
+          description: Notifications only; nothing to answer.
+        '400':
+          description: The body was not JSON-RPC. A JSON-RPC error object, not this API's error shape.
+          content:
+            application/json:
+              schema: { type: object }
+        '401':
+          description: |
+            No credential, or one this pool will not vouch for. Carries
+            `WWW-Authenticate: Bearer resource_metadata="…"`, which is where a
+            connector starts its sign-in.
+          headers:
+            WWW-Authenticate:
+              description: '`Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource/api/mcp"`'
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413': { $ref: '#/components/responses/badRequest' }
+    get:
+      tags: [mcp]
+      operationId: getMcp
+      summary: 405 — this server is stateless and opens no stream.
+      security: []
+      responses:
+        '405':
+          description: '`Allow: POST, DELETE`. There is no server-initiated stream to subscribe to.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      tags: [mcp]
+      operationId: deleteMcp
+      summary: 204 — there is no session to end.
+      security: []
+      responses:
+        '204':
+          description: Nothing to do, and saying so is friendlier than a 404.
+
+  /.well-known/oauth-protected-resource/api/mcp:
+    servers:
+      - url: /
+        description: |
+          The origin, not `/api`. RFC 9728 puts a resource's metadata at
+          `/.well-known/oauth-protected-resource` plus the resource URL's own
+          path, so this document lives beside the site and a CloudFront
+          behaviour routes it to this API (`infra/lib/edge-stack.ts`).
+    get:
+      tags: [mcp]
+      operationId: getProtectedResourceMetadata
+      summary: Where to sign in for /api/mcp.
+      security: []
+      description: |
+        RFC 9728 §2, and public by specification. `resource` is exactly the URL
+        a connector calls and exactly the value it sends as the RFC 8707
+        `resource` parameter on the authorize and token requests;
+        `authorization_servers` is this origin, whose
+        `/.well-known/oauth-authorization-server` the client reads next —
+        the pool's endpoints with the PKCE line Cognito leaves out.
+      responses:
+        '200':
+          description: The metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [resource, authorization_servers, scopes_supported]
+                properties:
+                  resource: { type: string, format: uri }
+                  authorization_servers:
+                    type: array
+                    items: { type: string, format: uri }
+                  scopes_supported:
+                    type: array
+                    items: { type: string }
+                  bearer_methods_supported:
+                    type: array
+                    items: { type: string, enum: [header] }
+                  resource_documentation: { type: string, format: uri }
+
+  /.well-known/oauth-authorization-server:
+    servers:
+      - url: /
+    get:
+      tags: [mcp]
+      operationId: getAuthorizationServerMetadata
+      summary: The authorization server's metadata, published by the resource.
+      security: []
+      description: |
+        RFC 8414. Cognito supports PKCE and does not advertise it, and an MCP
+        client must refuse an authorization server whose metadata omits
+        `code_challenge_methods_supported` — so this API publishes the pool's
+        endpoints itself, verbatim, plus that one line. `issuer` is this
+        origin, the value `authorization_servers` names.
+      responses:
+        '200':
+          description: The metadata.
+          content:
+            application/json:
+              schema: { type: object }
+  /.well-known/openid-configuration:
+    servers:
+      - url: /
+    get:
+      tags: [mcp]
+      operationId: getOpenIdConfiguration
+      summary: The same document under the OpenID discovery name.
+      security: []
+      responses:
+        '200':
+          description: The metadata.
+          content:
+            application/json:
+              schema: { type: object }
+
 components:
 
   securitySchemes:
@@ -1662,6 +1901,18 @@ components:
           schema: { type: string }
 
   schemas:
+    StoredAsset:
+      type: object
+      description: What a direct `PUT` of a figure or a data file answers with.
+      required: [key, href, bytes, contentType]
+      properties:
+        key: { type: string, description: the store key }
+        href: { type: string, description: '`figures/<name>` — what the fragment should point at' }
+        bytes: { type: integer }
+        contentType: { type: string }
+        maxBytes: { type: integer, description: the cap, 5 MB }
+        etag: { type: string }
+        versionId: { type: [string, 'null'] }
     DemoManifest:
       type: object
       required: [title]
