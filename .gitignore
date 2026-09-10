@@ -1,0 +1,10 @@
+# The gallery is generated from demos/examples by tools/build-gallery.js and
+# published by .github/workflows/pages.yml. A committed copy would be a second
+# source of truth that nothing checks.
+site/
+
+# The lint's screenshots (`.check`) and the hand-taken ones (`.shots`).
+.check/
+.shots/
+
+node_modules/

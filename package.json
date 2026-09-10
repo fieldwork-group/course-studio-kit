@@ -1,0 +1,16 @@
+{
+  "name": "course-studio-kit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The public kit for the Course Studio: API documents, the user-demo format, a template, examples and the gallery.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "check": "node tools/check-demo.js demos/template demos/examples/*",
+    "gallery": "node tools/build-gallery.js",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

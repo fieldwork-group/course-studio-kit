@@ -1,0 +1,19 @@
+Creative Commons Attribution 4.0 International (CC BY 4.0)
+
+Everything under `docs/` in this repository — the API documents, the demo
+format, the authoring guide and the FAQ — is licensed under the Creative
+Commons Attribution 4.0 International licence.
+
+You are free to share and adapt this material for any purpose, including
+commercially, provided you give appropriate credit ("Fieldwork — Course Studio
+kit", with a link to this repository), give a link to the licence, and say if
+you made changes.
+
+The full text: https://creativecommons.org/licenses/by/4.0/legalcode
+A human-readable summary: https://creativecommons.org/licenses/by/4.0/
+
+The code in this repository — `demos/`, `tools/`, `site/` and everything
+outside `docs/` — is MIT instead; see the `LICENSE` file at the root. The split
+is deliberate: a lecturer should be able to take an example demo into a course
+without a licence question, and the documents should be quotable with
+attribution.
