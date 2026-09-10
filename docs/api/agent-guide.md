@@ -1,0 +1,237 @@
+# Writing this course through the API
+
+You are editing a physics course. The lectures are Hebrew, right-to-left, and
+they are read by students in a browser and printed as a handout. Read this
+before your first request; it is what a Claude Code session in the repository
+gets from `CLAUDE.md`, `conventions.md` and `glossary.md`, and you do not have
+the repository.
+
+## Three rules you must not break
+
+1. **Hebrew never goes inside math.** KaTeX has no Hebrew metrics and renders
+   boxes. Put the Hebrew in HTML *around* the formula: `מ־$\omega_0$`, never
+   `$מ-\omega_0$`.
+2. **`.board-note` marks what is derived on the board.** The lecturer derives in
+   chalk; the page carries what chalk cannot. When a page states a result whose
+   derivation happens on the board, say so in a `<div class="board-note">`, in
+   one sentence, naming the step.
+3. **A slide that restates a paragraph of the notes should not exist.** The
+   notes are written first and carry every derivation. The deck is *cut from*
+   them: boxed results, setup figures and demos, nothing else.
+
+Beyond those: use the Hebrew term the course's `glossary.md` already has. Do not
+invent a second translation for a term that is in there. Prose is concise and
+accurate, with no embellishment.
+
+## What a lecture is
+
+Three things, stored separately:
+
+- **the fragment** — `notes.html`, and `slides.html` when there is a deck. Not a
+  page: a flat list of blocks, with no `<head>`, no boot script and no
+  wrappers. The platform's half is added when the page is rendered.
+- **the manifest** — `lecture.json`: the number, the titles, the standfirst
+  lines, the reading line, and which demo mounts where.
+  `docs/api/lecture.schema.json` is the authority and the API validates against
+  it.
+- **the assets** — `figures/*` and `data/*`, referenced from the fragment by
+  relative path.
+
+What the fragment may contain is `docs/api/vocabulary.md`: every node, the
+classes that give it meaning, and a real example of each lifted from the
+committed lectures. **The schema is the sanitiser** — whatever it does not know
+cannot reach a student's browser, so a save carrying markup it would not emit is
+refused with `422 unsafe_markup` naming the blocks and what was wrong. That is a
+refusal, not a cleanup: your content did not land.
+
+## The session
+
+```
+GET /openapi.json                    the contract: every route, request and answer
+GET /me                              → { actor, groups, tenant }
+GET /courses                         → the courses you can see
+GET /courses/{c}                     → the course, its lectures, its guides
+GET /courses/{c}/guides/conventions  → the notation and the sign conventions
+GET /courses/{c}/guides/glossary     → the one Hebrew term per concept
+GET /courses/{c}/guides/style        → how the prose should read
+GET /courses/{c}/guides/syllabus     → what is taught when, and what state it is in
+```
+
+Read the guides before you write physics. They are the difference between a
+lecture that fits the course and one that has to be rewritten: which symbol
+means which quantity, which sign convention the board uses, which Hebrew word
+this course has already chosen for *dispersion*.
+
+`groups` in `GET /me` tells you what the rest of the API will allow. `authors`
+writes; `viewers` reads everything, including drafts, and is refused every
+non-GET.
+
+## The edit loop
+
+```
+GET  /courses/{c}/lectures/{l}
+     → { manifest, manifestEtag, notes: { body, etag }, slides, lock }
+
+     … change the fragment …
+
+PUT  /courses/{c}/lectures/{l}/notes
+     If-Match: <the etag you were given>
+     x-changed-blocks: <ids of the blocks you changed>
+     body: the WHOLE fragment
+     → { etag, versionId, idsAssigned, bytes }
+```
+
+Four things about that `PUT`:
+
+- **The body is the whole fragment, not a patch.** There is no partial save. Get
+  it, change it, send all of it.
+- **`If-Match` is required.** It is the ETag from the `GET`. Without it the
+  answer is `400 if_match_required`. To create a document that does not exist
+  yet — a deck the lecture has not got — send `If-None-Match: *` instead.
+- **A `412` means someone saved while you were working.** The body carries the
+  current `etag`, who wrote it and when. Do not retry the same body: `GET`
+  again, re-apply your change to the new text, and save with the new ETag.
+- **`x-changed-blocks`** is a comma-separated list of the `data-id`s you
+  touched. It becomes the summary in the history, which is how a person later
+  sees what you did.
+
+Then look at it, and publish:
+
+```
+GET  /courses/{c}/lectures/{l}/preview?mode=notes    the page, as a student sees it
+POST /courses/{c}/lectures/{l}/publish               → 202 { job, status, keys }
+GET  /courses/{c}/lectures/{l}/publish/{job}         poll: copying → rendering → done | failed
+```
+
+The pages are already live when the `202` arrives; what is still running is the
+PDF. A failed print is a failed job, not a failed publish.
+
+## Block ids
+
+Every block in a stored fragment carries `data-id="…"`, ten characters of
+base32. **Keep them.** They are how the editor's merge, the author notes and the
+history all point at a block; changing one silently detaches every note anchored
+to it.
+
+- Editing a block: keep its `data-id` exactly as it was.
+- A **new** block: give it no `data-id` at all. The server assigns one and tells
+  you how many it assigned (`idsAssigned`).
+- Never copy a `data-id` onto a second block. Two blocks with one id is a
+  document the merge cannot reason about.
+
+`data-id` is the only attribute you must not author. Section anchors (`id="s4"`)
+are different: they are the lecturer's, the table of contents and every
+cross-reference use them, and they are kept verbatim.
+
+## Adding a figure
+
+Two steps. The bytes never pass through the API.
+
+```
+POST /courses/{c}/lectures/{l}/uploads
+     { "name": "reflection.svg", "type": "image/svg+xml", "size": 4210 }
+     → { url, fields, href: "figures/reflection.svg" }
+
+POST <url>   multipart/form-data: every entry of `fields` first, the file last
+```
+
+Then reference it from the fragment by the `href` you were given:
+
+```html
+<figure class="fig">
+  <img src="figures/reflection.svg" alt="שיקוף המטוטלות סביב נקודת האמצע">
+  <figcaption>שיקוף סביב הציר שבאמצע.</figcaption>
+</figure>
+```
+
+PNG, SVG and JPEG go under `figures/`; JSON — precomputed physics a demo reads
+instead of integrating — goes under `data/`. Five megabytes each. Every SVG is
+sanitised before it is served or published: an SVG from the site's own origin is
+a document, not a picture, so scripts, event handlers and external references
+come out of it.
+
+**If you cannot make the figure**, do not describe it in prose and move on. Put
+a request block where it belongs and say what it should show:
+
+```html
+<figure class="fig pending">
+  <p class="brief">גרף של x(t) עבור שלושה ערכי ריסון, עם המעטפת</p>
+</figure>
+```
+
+The theme labels it — "in preparation" to a student, a promise of tonight's run
+inside the studio — and a nightly session picks it up.
+
+## Wiring a demo
+
+A demo is an empty `<div>` with an id in the fragment, and an entry in the
+manifest saying what mounts there. The fragment:
+
+```html
+<figure class="demo-block">
+  <h3 class="demo-title">מסה על קפיץ, חי</h3>
+  <div id="demo-mass-spring"></div>
+</figure>
+```
+
+The manifest, `PUT /courses/{c}/lectures/{l}/manifest`, keyed by the selector:
+
+```json
+{ "demos": {
+    "#demo-mass-spring": { "module": "mass-spring", "export": "MassSpring",
+                           "opts": { "maxHeight": 400 } },
+    "#demo-pendulum-lab": { "kind": "file", "demo": "pendulum-lab" } } }
+```
+
+The first is a **platform demo**: `module` is a name in the committed demo
+bundle, never a path, and the platform resolves the export against it. The
+second is a **course demo**: one self-contained HTML file uploaded to the
+course, run in a sandboxed frame with no network. Use a platform demo when one
+exists that shows the physics; write a course demo when none does.
+
+`published` is not yours. The publish route writes it; a manifest body carrying
+it is a `400`, and the stored value is kept for you when you leave it out.
+
+## When you are not sure
+
+Leave a note on the block instead of guessing at the physics:
+
+```
+POST /courses/{c}/lectures/{l}/notes-thread
+     { "body": "על הלוח הסימן הפוך — לשנות גם כאן?",
+       "anchor": { "section": "s4", "block": "K7F2Q9X1M0",
+                   "quote": "נבחר את הסימן כך ש" } }
+```
+
+The thread is never published. It is where the lecturer answers, and a note is
+cheaper than a lecture that teaches the wrong sign. Anchor it to the block you
+are unsure about, quote the sentence, and say what you would do.
+
+## Refusals worth recognising
+
+| Code | Means |
+|---|---|
+| `if_match_required` | a document save with no `If-Match` and no `If-None-Match: *` |
+| `precondition` (412) | someone saved first; re-`GET`, re-apply, save again |
+| `unsafe_markup` (422) | the fragment carried markup the schema would not emit; nothing was written |
+| `invalid_manifest` (400) | the manifest failed its schema; `path` is the JSON Pointer of the offending key |
+| `locked` (409) | someone has the lecture open. A courtesy, not a mutex — `If-Match` is what actually protects the save |
+| `forbidden` (403) | a `viewers` session tried to write, or the thing belongs to someone else |
+| `too_large` | over the cap: 5 MB a figure, 25 MB a request attachment, 256 KB a guide |
+
+Every error is `{ error, message, … }`. `error` is stable and worth branching
+on; `message` is a sentence for a person.
+
+## The whole loop, once
+
+```
+GET /me · GET /courses · GET /courses/waves/guides/conventions
+GET /courses/waves/lectures/L02-damped-driven
+    → notes.etag = "9f2a…"
+PUT /courses/waves/lectures/L02-damped-driven/notes
+    If-Match: "9f2a…"   x-changed-blocks: K7F2Q9X1M0
+    → { etag: "b31c…", idsAssigned: 2 }
+GET /courses/waves/lectures/L02-damped-driven/preview?mode=notes
+POST /courses/waves/lectures/L02-damped-driven/publish   → { job: "K9QT" }
+GET /courses/waves/lectures/L02-damped-driven/publish/K9QT → { status: "done" }
+```

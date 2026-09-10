@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://studio.fieldwork-group.com/schema/course.schema.json",
+  "title": "course.json",
+  "description": "A course: its names, its lecture order, its theme and the platform build its pages are pinned to.",
+  "type": "object",
+  "required": [
+    "id"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"
+    },
+    "title": {
+      "type": "string",
+      "description": "the Hebrew name of the course"
+    },
+    "titleEn": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "the English name, shown in its own bidi isolate"
+    },
+    "term": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lecturer": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "theme": {
+      "type": "object",
+      "description": "the course's token set; `PUT /courses/{c}/theme` is what validates it properly",
+      "properties": {
+        "base": {
+          "const": "aegean"
+        },
+        "preset": {
+          "type": "string"
+        },
+        "overrides": {
+          "type": "object"
+        },
+        "fonts": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "platform": {
+      "type": "string",
+      "description": "the platform hash a published page loads (`/lib/<hash>`), or `dev`"
+    },
+    "lectures": {
+      "type": "array",
+      "description": "the lecture ids in the lecturer's own order; the importer appends, never reorders",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"
+      },
+      "uniqueItems": true
+    }
+  }
+}

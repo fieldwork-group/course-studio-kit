@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://studio.fieldwork-group.com/schema/lecture.schema.json",
+  "title": "lecture.json",
+  "description": "A lecture's manifest: everything about a lecture that is not the fragment.",
+  "type": "object",
+  "required": [
+    "id"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$",
+      "description": "the folder name; the server overwrites it with the one in the path"
+    },
+    "kind": {
+      "enum": [
+        "notes",
+        "slides"
+      ],
+      "description": "`split` records which file it came from; a merged manifest has neither"
+    },
+    "number": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "the lecture number in the course"
+    },
+    "title": {
+      "type": "string",
+      "description": "the Hebrew title, as the h1 reads"
+    },
+    "docTitle": {
+      "type": "string",
+      "description": "the <title> of the notes page"
+    },
+    "slidesTitle": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "the <title> of the deck, when there is one"
+    },
+    "kicker": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "the standfirst spans the shell injects: course line, lecture line, reading"
+    },
+    "reading": {
+      "type": "string",
+      "description": "the reading line, usually the last kicker span"
+    },
+    "demos": {
+      "$ref": "#/$defs/demoMap"
+    },
+    "slideDemos": {
+      "$ref": "#/$defs/demoMap"
+    },
+    "published": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "readOnly": true,
+      "description": "written by the publish route; a client body carrying it is a 400",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "platform": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "demo": {
+      "type": "object",
+      "description": "either { module?, export, opts? } for a platform demo or { kind: 'file', demo } for a course demo",
+      "properties": {
+        "kind": {
+          "const": "file",
+          "description": "present only on a course-level user demo"
+        },
+        "module": {
+          "type": "string",
+          "minLength": 1,
+          "description": "a name in the platform demo bundle, never a path"
+        },
+        "export": {
+          "type": "string",
+          "minLength": 1,
+          "description": "the class exported by that module"
+        },
+        "demo": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+          "description": "the course demo's slug"
+        },
+        "opts": {
+          "type": "object",
+          "description": "passed to the demo at mount; the demo decides what it means"
+        },
+        "aspect": {
+          "type": "number",
+          "description": "height ÷ width of a course demo, copied from its demo.json when wired (plan 04)"
+        },
+        "title": {
+          "type": "string",
+          "description": "a course demo's title, copied when wired so a published page needs no API"
+        }
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "export"
+          ]
+        },
+        {
+          "required": [
+            "kind",
+            "demo"
+          ]
+        }
+      ]
+    },
+    "demoMap": {
+      "type": "object",
+      "description": "demo mounts, keyed by the selector of the empty div in the fragment",
+      "propertyNames": {
+        "pattern": "^#[A-Za-z][A-Za-z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/demo"
+      }
+    }
+  }
+}

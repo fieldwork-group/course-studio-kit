@@ -1,0 +1,2056 @@
+# The Course Studio API, as a machine can read it.
+#
+# Hand-written, one operation per registered route, and held to that by
+# `test/openapi.test.js`: it walks the router's own `(method, path)` pairs and
+# asserts the set equals the set of operations here, both ways. A route with no
+# entry fails the suite; an entry with no route fails it too. That test is the
+# `check:demos` of the API — a stale spec looks fine in review and sends an
+# agent to a 404.
+#
+# Served at `GET /openapi.json`. The YAML is converted at build time
+# (`npm run build:openapi`, `tools/openapi.js`) into `src/openapi.generated.js`,
+# which is what the Lambda imports: nothing on a request path parses YAML.
+# `info.version` is written from `package.json` by that build, so it cannot
+# drift from the package it describes.
+#
+# The prose an agent needs *around* these routes — the edit loop, the block-id
+# discipline, what a 422 means — is `docs/api/agent-guide.md`. This file is the
+# shape of every request and answer; that one is how to use them.
+
+openapi: 3.1.0
+
+info:
+  title: Course Studio API
+  version: 0.0.0
+  summary: Edit, preview and publish Hebrew physics lecture notes and decks.
+  description: |
+    One handler over a versioned object store. Everything a lecture is — the
+    notes fragment, the deck fragment, the manifest, the figures, the author
+    notes thread, the requests — is read and written here, by the studio SPA,
+    by the `studio` CLI, and by an agent holding a token.
+
+    Three things govern every call:
+
+    - **The tenant is never in the path.** It is fixed in the deployment, so
+      the IAM policy `tenants/<t>/*` means something.
+    - **Every write needs the `authors` group.** A `viewers` session may read
+      everything, including drafts, and is refused every non-GET by method.
+      There are no per-route exceptions.
+    - **A document save is conditional.** `PUT …/notes` and `PUT …/slides`
+      require `If-Match` with the ETag from the `GET` (or `If-None-Match: *`
+      to create), and answer `412` with the current ETag and who wrote it.
+
+    Errors are always `{ error, message, ... }` — the code in `error` is
+    stable, `message` is a sentence for a person, and some codes carry extra
+    keys (`etag` and `actor` on a 412, `path` on a validation failure).
+  license:
+    name: Proprietary — Fieldwork
+  x-guides:
+    agent: docs/api/agent-guide.md
+    vocabulary: docs/api/vocabulary.md
+    lecture: docs/api/lecture.schema.json
+    course: docs/api/course.schema.json
+
+servers:
+  - url: /api
+    description: Same origin as the studio SPA and the published site.
+
+security:
+  - bearer: []
+
+tags:
+  - name: session
+    description: Who is asking.
+  - name: contract
+    description: The API describing itself.
+  - name: courses
+    description: A course, its theme and its guides.
+  - name: lectures
+    description: The documents, their history and their assets.
+  - name: publish
+    description: Draft to student-visible page.
+  - name: threads
+    description: Author notes on a block.
+  - name: tasks
+    description: High-effort requests and their attachments.
+  - name: dev
+    description: The local stand-ins for presigned S3 URLs. Not deployed.
+
+paths:
+
+  /openapi.json:
+    get:
+      tags: [contract]
+      operationId: getOpenapi
+      summary: This document, as JSON.
+      description: |
+        The spec the deployment is actually running, with `info.version` equal
+        to the API package's version. Any `read` may fetch it.
+      responses:
+        '200':
+          description: The OpenAPI document.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401': { $ref: '#/components/responses/unauthenticated' }
+
+  /me:
+    get:
+      tags: [session]
+      operationId: getMe
+      summary: The signed-in actor, their groups and the tenant.
+      description: |
+        The first call of any client. `groups` decides what the rest of the
+        API will allow: `authors` writes, `viewers` reads.
+      responses:
+        '200':
+          description: The session.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [actor, groups, tenant]
+                properties:
+                  actor: { type: string, description: 'the email claim' }
+                  groups:
+                    type: array
+                    items: { type: string, enum: [authors, viewers] }
+                  tenant: { type: string }
+                  dev: { type: boolean, description: 'true on the local dev server' }
+        '401': { $ref: '#/components/responses/unauthenticated' }
+
+  /courses:
+    get:
+      tags: [courses]
+      operationId: listCourses
+      summary: Every course under the tenant.
+      responses:
+        '200':
+          description: The courses.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant: { type: string }
+                  courses:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        title: { type: string }
+                        titleEn: { type: [string, 'null'] }
+                        term: { type: [string, 'null'] }
+                        lectures: { type: integer, description: 'how many, not which' }
+                        lastModified: { type: [string, 'null'], format: date-time }
+        '401': { $ref: '#/components/responses/unauthenticated' }
+
+  /courses/{c}:
+    parameters:
+      - $ref: '#/components/parameters/course'
+    get:
+      tags: [courses]
+      operationId: getCourse
+      summary: The course, its lectures with their state, and the guides present.
+      description: |
+        One request for the whole course page: `course.json`, a summary row
+        per lecture (when it was last touched and by whom, whether it is
+        published, how many author notes are open, whether it has a deck), and
+        the names of the guides in the store.
+      responses:
+        '200':
+          description: The course.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  course: { $ref: '#/components/schemas/Course' }
+                  etag: { type: string }
+                  lectures:
+                    type: array
+                    items: { $ref: '#/components/schemas/LectureSummary' }
+                  guides:
+                    type: array
+                    items: { $ref: '#/components/schemas/GuideEntry' }
+        '404': { $ref: '#/components/responses/notFound' }
+    put:
+      tags: [courses]
+      operationId: putCourse
+      summary: Write `course.json`.
+      description: |
+        Validated against `course.schema.json`; an unknown key is a `400`
+        naming its JSON Pointer. `id` is overwritten with the one in the path.
+        Event `course.save`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Course' }
+      responses:
+        '200':
+          description: Written.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  course: { $ref: '#/components/schemas/Course' }
+                  etag: { type: string }
+                  versionId: { type: string }
+        '400': { $ref: '#/components/responses/invalidDocument' }
+        '403': { $ref: '#/components/responses/forbidden' }
+
+  /courses/{c}/guides:
+    parameters:
+      - $ref: '#/components/parameters/course'
+    get:
+      tags: [courses]
+      operationId: listGuides
+      summary: The course's working documents that exist, and the four names there can be.
+      description: |
+        `conventions`, `glossary`, `syllabus`, `style`. Read these before
+        writing physics for the course: they carry the notation, the sign
+        conventions, the one Hebrew term per concept and the house style.
+      responses:
+        '200':
+          description: The guides.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  course: { type: string }
+                  names:
+                    type: array
+                    items: { type: string, enum: [conventions, glossary, syllabus, style] }
+                  guides:
+                    type: array
+                    items: { $ref: '#/components/schemas/GuideEntry' }
+
+  /courses/{c}/guides/{name}:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/guideName'
+    get:
+      tags: [courses]
+      operationId: getGuide
+      summary: One guide, as markdown.
+      responses:
+        '200':
+          description: The document.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            text/markdown:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '404': { $ref: '#/components/responses/notFound' }
+    put:
+      tags: [courses]
+      operationId: putGuide
+      summary: Write one guide.
+      description: |
+        `If-Match` is optional — a first push has no ETag to send — and means
+        what it means everywhere else when it is present. At most 256 KB.
+        Event `guide.save`.
+      parameters:
+        - $ref: '#/components/parameters/ifMatchOptional'
+      requestBody:
+        required: true
+        content:
+          text/markdown:
+            schema: { type: string }
+      responses:
+        '200':
+          description: Written.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  etag: { type: string }
+                  versionId: { type: string }
+                  bytes: { type: integer }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '412': { $ref: '#/components/responses/precondition' }
+        '413': { $ref: '#/components/responses/tooLarge' }
+
+  /courses/{c}/theme:
+    parameters:
+      - $ref: '#/components/parameters/course'
+    get:
+      tags: [courses]
+      operationId: getTheme
+      summary: The course's theme, and everything the theme panel draws.
+      description: |
+        The stored theme, its resolved tokens, the generated CSS, the four
+        gallery presets, the twelve token roles, the vendored faces and the
+        colour-vision verdict — one screen, one request.
+      responses:
+        '200':
+          description: The theme.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ThemeResponse' }
+        '404': { $ref: '#/components/responses/notFound' }
+    put:
+      tags: [courses]
+      operationId: putTheme
+      summary: Save the theme and regenerate `theme.css`.
+      description: |
+        Strict: an unknown preset, a token that is not one of the twelve, a
+        colour that is not `#RRGGBB`, a face that is not vendored or a weight
+        that face does not ship is a `400` (`invalid_preset`, `invalid_token`,
+        `invalid_colour`, `invalid_font`, `invalid_weight`). A failing
+        colour-vision verdict is **not** a refusal: it comes back in the body.
+        Event `theme.save`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Theme' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ThemeResponse' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+
+  /courses/{c}/theme.css:
+    parameters:
+      - $ref: '#/components/parameters/course'
+    get:
+      tags: [courses]
+      operationId: getCourseThemeCss
+      summary: The generated `theme.css` for the course.
+      description: |
+        What the shell's relative `<link>` resolves to for a page at course
+        level. A course still on the base theme has no stored CSS and answers
+        `404` rather than an empty stylesheet.
+      responses:
+        '200': { $ref: '#/components/responses/css' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/lectures/{l}/theme.css:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+    get:
+      tags: [courses]
+      operationId: getLectureThemeCss
+      summary: The same stylesheet, one level deeper.
+      description: |
+        The preview route lives under the lecture and the shell links
+        `theme.css` relatively, so both levels resolve to the one stored copy.
+        Publish is what makes the real siblings on the site.
+      responses:
+        '200': { $ref: '#/components/responses/css' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/lectures/{l}:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+    get:
+      tags: [lectures]
+      operationId: getLecture
+      summary: The manifest, both fragments with their ETags, and the live lock.
+      description: |
+        The start of every edit loop. Keep the ETags: `PUT …/notes` requires
+        the one that came back here.
+      responses:
+        '200':
+          description: The lecture.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  manifest: { $ref: '#/components/schemas/Lecture' }
+                  manifestEtag: { type: [string, 'null'] }
+                  notes: { $ref: '#/components/schemas/StoredDocument' }
+                  slides: { $ref: '#/components/schemas/StoredDocument' }
+                  lock: { $ref: '#/components/schemas/Lock' }
+        '404': { $ref: '#/components/responses/notFound' }
+    put:
+      tags: [lectures]
+      operationId: putLecture
+      summary: Create or replace a whole lecture. No ETags.
+      description: |
+        `studio import`: the manifest, the notes fragment and optionally the
+        deck fragment in one write, appended to `course.json`'s lecture order
+        if it is new. There is deliberately no `POST /courses/{c}/lectures` —
+        that would be a second way to end up with notes and no manifest.
+        Event `import`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [notes]
+              properties:
+                manifest: { $ref: '#/components/schemas/Lecture' }
+                notes: { type: string, description: 'the notes fragment' }
+                slides: { type: string, description: 'the deck fragment' }
+      responses:
+        '200':
+          description: Written.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  manifest: { $ref: '#/components/schemas/Lecture' }
+                  manifestEtag: { type: string }
+                  notes: { $ref: '#/components/schemas/SaveResult' }
+                  slides: { $ref: '#/components/schemas/SaveResult' }
+        '400': { $ref: '#/components/responses/invalidDocument' }
+        '403': { $ref: '#/components/responses/forbidden' }
+
+  /courses/{c}/lectures/{l}/notes:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+      - $ref: '#/components/parameters/ifMatch'
+      - $ref: '#/components/parameters/ifNoneMatch'
+      - $ref: '#/components/parameters/changedBlocks'
+      - $ref: '#/components/parameters/studioClient'
+    put:
+      tags: [lectures]
+      operationId: putNotes
+      summary: Save the whole notes fragment.
+      description: |
+        The body is the **whole fragment**, not a patch. The server normalises
+        it through the schema — which is the sanitiser — assigns `data-id` to
+        blocks that have none, and writes conditionally.
+
+        `If-Match` is **required**, with the ETag from `GET …/lectures/{l}`;
+        `If-None-Match: *` creates a document that does not exist yet. Without
+        either it is a `400 if_match_required`. On a lost race it is a `412`
+        carrying the current ETag and who saved it, which is where the
+        three-way merge starts.
+
+        `x-changed-blocks` is the list of block ids you changed; it becomes the
+        event summary and is otherwise ignored.
+      requestBody:
+        required: true
+        content:
+          text/html:
+            schema: { type: string }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SaveResult' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '412': { $ref: '#/components/responses/precondition' }
+
+  /courses/{c}/lectures/{l}/slides:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+      - $ref: '#/components/parameters/ifMatch'
+      - $ref: '#/components/parameters/ifNoneMatch'
+      - $ref: '#/components/parameters/changedBlocks'
+      - $ref: '#/components/parameters/studioClient'
+    put:
+      tags: [lectures]
+      operationId: putSlides
+      summary: The same, for the deck.
+      description: |
+        Identical rules to `PUT …/notes`. A deck a lecture does not have yet is
+        created with `If-None-Match: *`.
+      requestBody:
+        required: true
+        content:
+          text/html:
+            schema: { type: string }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SaveResult' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '412': { $ref: '#/components/responses/precondition' }
+
+  /courses/{c}/lectures/{l}/manifest:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+      - $ref: '#/components/parameters/ifMatchOptional'
+    put:
+      tags: [lectures]
+      operationId: putManifest
+      summary: Write `lecture.json`.
+      description: |
+        Validated against `lecture.schema.json`. A key the document does not
+        have, or a `demos` entry that is neither `{module, export, opts?}` nor
+        `{kind: file, demo}`, is a `400` whose `path` is the JSON Pointer of the
+        offending key. `published` is the publish route's: a body carrying it is
+        a `400`, and the stored value is carried forward for you. `id` is
+        overwritten with the one in the path. Event `manifest.save`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Lecture' }
+      responses:
+        '200':
+          description: Written.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  manifest: { $ref: '#/components/schemas/Lecture' }
+                  etag: { type: string }
+                  versionId: { type: string }
+        '400': { $ref: '#/components/responses/invalidDocument' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '412': { $ref: '#/components/responses/precondition' }
+
+  /courses/{c}/lectures/{l}/versions:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+    get:
+      tags: [lectures]
+      operationId: listVersions
+      summary: Every stored version of both documents, joined with the event that wrote it.
+      responses:
+        '200':
+          description: The history.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notes:
+                    type: array
+                    items: { $ref: '#/components/schemas/Version' }
+                  slides:
+                    type: array
+                    items: { $ref: '#/components/schemas/Version' }
+
+  /courses/{c}/lectures/{l}/restore:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+    post:
+      tags: [lectures]
+      operationId: restoreVersion
+      summary: Copy an old version onto the current document.
+      description: |
+        A restore is a new version, not a rewind: the history it came from
+        stays. Event `restore`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, versionId]
+              properties:
+                key: { type: string, enum: [notes, slides] }
+                versionId: { type: string }
+      responses:
+        '200':
+          description: Restored.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key: { type: string }
+                  etag: { type: string }
+                  versionId: { type: string }
+                  restoredFrom: { type: string }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/lectures/{l}/uploads:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+    post:
+      tags: [lectures]
+      operationId: presignUpload
+      summary: A presigned target for a figure or a data file.
+      description: |
+        Step one of two. Declare the name, the content type and the size; the
+        answer is a URL and a set of form fields to POST the bytes to
+        **directly** — the API never carries them. Then reference the file from
+        the fragment as `href`, which is `figures/<name>` or `data/<name>`.
+
+        PNG, SVG and JPEG go under `figures/`, JSON under `data/`, at most
+        5 MB. The event `figure.upload` is written **here**, at the presign,
+        because with S3 the bytes never touch the API and this is the last
+        moment it knows anything.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type, size]
+              properties:
+                name: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$' }
+                type:
+                  type: string
+                  enum: [image/png, image/svg+xml, image/jpeg, application/json]
+                size: { type: integer }
+                dir: { type: string, enum: [figures, data] }
+      responses:
+        '200':
+          description: Where to post the bytes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PresignedPost' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+
+  /courses/{c}/lectures/{l}/figures/{name}:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+      - $ref: '#/components/parameters/assetName'
+    get:
+      tags: [lectures]
+      operationId: getFigure
+      summary: A draft figure.
+      description: |
+        What the preview page resolves `figures/<name>` to. An SVG is
+        sanitised on the way out exactly as publish sanitises it on the way in,
+        so an author judges the figure they are about to publish; a clean file
+        comes back byte for byte.
+      responses:
+        '200':
+          description: The bytes.
+          content:
+            image/png: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/svg+xml: { schema: { type: string } }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/lectures/{l}/data/{name}:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+      - $ref: '#/components/parameters/assetName'
+    get:
+      tags: [lectures]
+      operationId: getData
+      summary: A draft data file — the physics a demo reads instead of integrating.
+      responses:
+        '200':
+          description: The JSON.
+          content:
+            application/json:
+              schema: { type: object }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/lectures/{l}/preview:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+      - name: mode
+        in: query
+        required: false
+        description: |
+          `notes` (default) and `slides` are whole pages, openable in a tab.
+          `preview` is the notes body only, for a client that has already
+          loaded the platform CSS and renders the reading view into its own
+          page.
+        schema: { type: string, enum: [notes, slides, preview], default: notes }
+    get:
+      tags: [lectures]
+      operationId: getPreview
+      summary: The shell around the draft.
+      description: |
+        The same renderer that publishes, so what you see here cannot drift
+        from what a student gets. `Cache-Control: no-store`, because a cached
+        preview of a draft is a lie.
+      responses:
+        '200':
+          description: The page.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            text/html:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/lectures/{l}/publish:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+    post:
+      tags: [publish]
+      operationId: publishLecture
+      summary: Render the draft onto the site and start the print job.
+      description: |
+        Copies an explicit list — the shelled `notes.html`, the shelled
+        `slides.html` if there is one, `figures/*`, `data/*` and `theme.css` —
+        into the site area, writes `manifest.published`, and answers `202` with
+        a job id. Poll `GET …/publish/{job}` until it is `done` or `failed`.
+
+        The copy has already happened when you get the `202`. What is still
+        running is the PDF, and **a failed print is a failed job, not a failed
+        publish**: the pages are live either way and the job record says so.
+
+        Events `publish.start`, then `publish.done` or `publish.failed`.
+      responses:
+        '202':
+          description: Accepted; the pages are on the site and the print is running.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job: { type: string }
+                  status: { type: string, enum: [copying, rendering, done, failed] }
+                  site: { type: string }
+                  keys: { type: array, items: { type: string } }
+                  published: { $ref: '#/components/schemas/Published' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/lectures/{l}/publish/{job}:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+      - name: job
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Z0-9]{4,40}$' }
+    get:
+      tags: [publish]
+      operationId: getPublishJob
+      summary: The job, while it runs and after it stops.
+      description: '`copying` → `rendering` → `done` | `failed`.'
+      responses:
+        '200':
+          description: The job record.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublishJob' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/lectures/{l}/notes-thread:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+    get:
+      tags: [threads]
+      operationId: getNotesThread
+      summary: The author notes on this lecture.
+      description: |
+        Never published. This is where to leave a question instead of guessing
+        at the physics: anchor it to the block you are unsure about and say
+        what you would do.
+      responses:
+        '200':
+          description: The thread.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Thread' }
+    post:
+      tags: [threads]
+      operationId: addNote
+      summary: Add a note.
+      description: 'Event `note.add`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string }
+                anchor: { $ref: '#/components/schemas/Anchor' }
+      responses:
+        '201':
+          description: Added.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  note: { $ref: '#/components/schemas/Note' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '409': { $ref: '#/components/responses/busy' }
+
+  /courses/{c}/lectures/{l}/notes-thread/{id}:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [threads]
+      operationId: patchNote
+      summary: Reply, resolve, reopen, or edit your own note.
+      description: |
+        One of `reply`, `status` or `body` per call. Editing `body` is the
+        note's author's alone. Events `note.reply`, `note.resolve`,
+        `note.reopen`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reply: { type: string }
+                status: { type: string, enum: [open, done] }
+                body: { type: string }
+      responses:
+        '200':
+          description: Changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  note: { $ref: '#/components/schemas/Note' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409': { $ref: '#/components/responses/busy' }
+    delete:
+      tags: [threads]
+      operationId: deleteNote
+      summary: Remove a note and its replies. The note's author only.
+      description: 'Event `note.delete`.'
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: { type: string }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409': { $ref: '#/components/responses/busy' }
+
+  /courses/{c}/lectures/{l}/lock:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+    post:
+      tags: [lectures]
+      operationId: acquireLock
+      summary: Take or refresh the soft lock.
+      description: |
+        Not a mutex — a courtesy. Holding it gives you nothing; saving is still
+        governed by `If-Match`. What it buys is a banner before someone starts
+        typing rather than a conflict after. Five minutes, refreshed by an open
+        editor every sixty seconds. Only taking it writes an event
+        (`lock.acquire`).
+      responses:
+        '200':
+          description: Held.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lock: { $ref: '#/components/schemas/Lock' }
+                  refreshed: { type: boolean }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '409':
+          description: Someone else has it.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      tags: [lectures]
+      operationId: releaseLock
+      summary: Release the lock. The holder's only.
+      description: 'Event `lock.release`.'
+      responses:
+        '204':
+          description: Released, or there was nothing to release.
+        '403': { $ref: '#/components/responses/forbidden' }
+
+  /courses/{c}/tasks:
+    parameters:
+      - $ref: '#/components/parameters/course'
+    get:
+      tags: [tasks]
+      operationId: listTasks
+      summary: Every high-effort request, newest first, whole.
+      description: |
+        A task is what was asked for that has no lecture yet — a brief plus the
+        reference material for it. The whole document travels every time: it is
+        a few kilobytes and everything that reads one reads all of it.
+      responses:
+        '200':
+          description: The requests.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items: { $ref: '#/components/schemas/Task' }
+    post:
+      tags: [tasks]
+      operationId: addTask
+      summary: File a request.
+      description: 'Event `task.add`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, title, brief]
+              properties:
+                kind: { type: string, enum: [lecture-from-notes, figures, demo, other] }
+                title: { type: string }
+                brief: { type: string, description: markdown }
+                lecture: { type: string }
+                number: { type: integer }
+      responses:
+        '201':
+          description: Filed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task: { $ref: '#/components/schemas/Task' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+
+  /courses/{c}/tasks/{id}:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/taskId'
+    get:
+      tags: [tasks]
+      operationId: getTask
+      summary: 'One request: the brief, the files, the log and the result.'
+      responses:
+        '200':
+          description: The request.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task: { $ref: '#/components/schemas/Task' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '404': { $ref: '#/components/responses/notFound' }
+    patch:
+      tags: [tasks]
+      operationId: patchTask
+      summary: Move a request, comment on it, or record its result.
+      description: |
+        Any of `status`, `comment`, `result`, `title` and `brief` in one call:
+        one write, one event naming what changed. While a request is still
+        `requested` its author may edit the title and the brief; once a run has
+        picked it up that is refused (`task_started`) and a comment is what is
+        left. Event `task.update`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [requested, in-progress, done, declined] }
+                comment: { type: string }
+                result:
+                  type: object
+                  properties:
+                    lecture: { type: string }
+                    note: { type: string }
+                title: { type: string }
+                brief: { type: string }
+      responses:
+        '200':
+          description: Changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task: { $ref: '#/components/schemas/Task' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409': { $ref: '#/components/responses/busy' }
+    delete:
+      tags: [tasks]
+      operationId: deleteTask
+      summary: Withdraw a request. The requester's, and only while it is `requested`.
+      description: 'Event `task.delete`.'
+      responses:
+        '200':
+          description: Withdrawn.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: { type: string }
+                  files: { type: integer }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409': { $ref: '#/components/responses/busy' }
+
+  /courses/{c}/tasks/{id}/uploads:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/taskId'
+    post:
+      tags: [tasks]
+      operationId: presignTaskUpload
+      summary: A presigned target for a request's reference material.
+      description: |
+        The same two-step as a figure, with its own allow-list and its own cap:
+        PDF, PNG, JPEG, TXT and MD at **25 MB**, because the thing being
+        uploaded is a scanned chapter and not a picture the schema will render.
+        The file is declared on the task here, at the presign; an upload that
+        never finishes is a file in the list that downloads as a `404`, which is
+        visible and fixable. Event `task.file`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type, size]
+              properties:
+                name: { type: string }
+                type:
+                  type: string
+                  enum: [application/pdf, image/png, image/jpeg, text/plain, text/markdown]
+                size: { type: integer }
+      responses:
+        '200':
+          description: Where to post the bytes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PresignedPost' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '409': { $ref: '#/components/responses/busy' }
+
+  /courses/{c}/tasks/{id}/files/{name}:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/taskId'
+      - $ref: '#/components/parameters/assetName'
+    get:
+      tags: [tasks]
+      operationId: getTaskFile
+      summary: A presigned URL for one attachment, good for fifteen minutes.
+      description: |
+        The bytes never pass through the API: a Lambda response is capped at
+        6 MB and an attachment at 25. The URL serves the file as an attachment
+        with no session. `404` if the declared upload never landed.
+      responses:
+        '200':
+          description: Where to fetch it.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  type: { type: string }
+                  url: { type: string, format: uri }
+                  expires: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /events:
+    get:
+      tags: [session]
+      operationId: listEvents
+      summary: The activity feed, newest first, capped at 200.
+      description: |
+        One record per mutation, append-only. Every route that changes anything
+        writes one before it answers, so this is the honest record of what
+        happened and who did it.
+      parameters:
+        - name: since
+          in: query
+          schema: { type: string, format: date-time }
+          description: strictly newer than this instant
+        - name: course
+          in: query
+          schema: { type: string }
+        - name: lecture
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, maximum: 200, default: 200 }
+      responses:
+        '200':
+          description: The events.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: '#/components/schemas/Event' }
+                  count: { type: integer }
+
+  /tokens:
+    get:
+      tags: [tokens]
+      operationId: listTokens
+      summary: The caller's own access tokens, never the hash.
+      description: |
+        A session only — a token asking is 403 `session_required`, so a leaked
+        credential cannot enumerate its siblings. Each row carries a `state`
+        (`active` · `expired` · `revoked`) computed at read time.
+      responses:
+        '200':
+          description: The caller's tokens.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tokens:
+                    type: array
+                    items: { $ref: '#/components/schemas/Token' }
+        '403': { $ref: '#/components/responses/forbidden' }
+    post:
+      tags: [tokens]
+      operationId: mintToken
+      summary: Mint an access token. The secret is in this response and nowhere else.
+      description: |
+        Defaults: all three scopes, every course the owner can see, no expiry.
+        `courses` must be `["*"]` or a subset of the owner's courses (400
+        `unknown_course` otherwise). The groups are the minting session's,
+        copied verbatim, so a token is never more than its owner was. Event
+        `token.create`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label]
+              properties:
+                label: { type: string, maxLength: 60 }
+                scopes:
+                  type: array
+                  items: { type: string, enum: [read, write, publish] }
+                courses:
+                  type: array
+                  items: { type: string }
+                expires: { type: [string, 'null'], format: date-time }
+      responses:
+        '201':
+          description: Minted. `secret` is shown once.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { $ref: '#/components/schemas/Token' }
+                  secret: { type: string, description: '`cst_<ulid>_<secret>`; store it, it is not retrievable' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+
+  /tokens/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      tags: [tokens]
+      operationId: revokeToken
+      summary: Revoke one of the caller's own tokens.
+      description: |
+        Someone else's is a 404, not a 403 — the id space is not enumerable.
+        Conditional on the record's ETag with one retry; a third writer is 409
+        `token_busy`. Event `token.revoke`. Takes effect within the authorizer's
+        cache window (60 s deployed).
+      responses:
+        '200':
+          description: 'Revoked (or already was — `alreadyRevoked: true`).'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { $ref: '#/components/schemas/Token' }
+                  alreadyRevoked: { type: boolean }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409':
+          description: Two writers raced twice.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /access:
+    get:
+      tags: [access]
+      operationId: listAccess
+      summary: Every access record. Administrators, sessions only.
+      responses:
+        '200':
+          description: The records.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items: { $ref: '#/components/schemas/AccessRecord' }
+        '403': { $ref: '#/components/responses/forbidden' }
+
+  /access/{email}:
+    parameters:
+      - name: email
+        in: path
+        required: true
+        description: Lower-cased on the way in; two spellings are one record.
+        schema: { type: string, format: email }
+    get:
+      tags: [access]
+      operationId: getAccess
+      summary: One user's record.
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccessRecord' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+    put:
+      tags: [access]
+      operationId: putAccess
+      summary: Replace the user's roles map. Creates the record.
+      description: |
+        The whole map, deliberately: the record says what the last administrator
+        decided. Read-modify-write server side with three retries. Event
+        `access.grant`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roles]
+              properties:
+                roles:
+                  type: object
+                  additionalProperties: { type: string, enum: [author, viewer] }
+      responses:
+        '200':
+          description: Written.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccessRecord' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+    delete:
+      tags: [access]
+      operationId: deleteAccess
+      summary: Remove the record — the user sees no course afterwards.
+      description: 'Event `access.revoke`.'
+      responses:
+        '204':
+          description: Removed.
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/members:
+    parameters:
+      - $ref: '#/components/parameters/course'
+    get:
+      tags: [courses]
+      operationId: listMembers
+      summary: Who has which role on this course. Authors and administrators.
+      description: |
+        The one read a `viewer` is refused (403): a lecturer may see who reads
+        their drafts; a student may not enumerate the course.
+      responses:
+        '200':
+          description: The members.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  members:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        email: { type: string }
+                        role: { type: string, enum: [author, viewer] }
+        '403': { $ref: '#/components/responses/forbidden' }
+
+  /courses/{c}/demos:
+    get:
+      summary: Every demo in the course, with the lectures that wire each one
+      operationId: listDemos
+      parameters: [{ $ref: '#/components/parameters/course' }]
+      responses:
+        '200':
+          description: The course's demo library
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [course, demos]
+                properties:
+                  course: { type: string }
+                  demos:
+                    type: array
+                    items: { $ref: '#/components/schemas/DemoListing' }
+
+  /courses/{c}/demos/{slug}:
+    get:
+      summary: One demo's manifest, the ETags of its three files, and its usedIn
+      operationId: getDemo
+      parameters:
+        - { $ref: '#/components/parameters/course' }
+        - { $ref: '#/components/parameters/slug' }
+      responses:
+        '200':
+          description: The demo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DemoListing' }
+        '404': { description: No such demo }
+    put:
+      summary: Create or update demo.json; the slug in the path wins
+      operationId: putDemo
+      parameters:
+        - { $ref: '#/components/parameters/course' }
+        - { $ref: '#/components/parameters/slug' }
+        - { $ref: '#/components/parameters/ifMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DemoManifest' }
+      responses:
+        '200': { description: Updated }
+        '201': { description: Created }
+        '400': { description: invalid_slug, title_required or invalid_aspect }
+        '412': { description: The If-Match did not hold }
+        '413': { description: too_large — demo.json is capped at 4 KB }
+    delete:
+      summary: Remove all three files, unless a lecture wires the demo
+      operationId: deleteDemo
+      parameters:
+        - { $ref: '#/components/parameters/course' }
+        - { $ref: '#/components/parameters/slug' }
+      responses:
+        '200': { description: Deleted, with the keys that were removed }
+        '404': { description: No such demo }
+        '409':
+          description: demo_in_use — the body carries `usedIn`, the lectures that wire it
+
+  /courses/{c}/demos/{slug}/demo.html:
+    get:
+      summary: The draft document, served with the demo CSP and no x-frame-options
+      operationId: getDemoHtml
+      parameters:
+        - { $ref: '#/components/parameters/course' }
+        - { $ref: '#/components/parameters/slug' }
+      responses:
+        '200':
+          description: The file
+          headers:
+            Content-Security-Policy:
+              schema: { type: string }
+              description: The demo CSP (`src/demoCsp.js`) — no origin except frame-ancestors
+          content:
+            text/html: { schema: { type: string } }
+        '404': { description: No such demo, or no document uploaded yet }
+    put:
+      summary: Upload the document; a demo.json must exist first
+      operationId: putDemoHtml
+      parameters:
+        - { $ref: '#/components/parameters/course' }
+        - { $ref: '#/components/parameters/slug' }
+        - { $ref: '#/components/parameters/ifMatch' }
+        - { $ref: '#/components/parameters/ifNoneMatch' }
+      requestBody:
+        required: true
+        content:
+          text/html: { schema: { type: string } }
+      responses:
+        '200': { description: Written }
+        '400': { description: invalid_type or empty_body }
+        '404': { description: No demo.json for this slug }
+        '412': { description: The condition did not hold }
+        '413': { description: too_large — 2 MB }
+
+  /courses/{c}/demos/{slug}/still.png:
+    get:
+      summary: The draft still frame
+      operationId: getDemoStill
+      parameters:
+        - { $ref: '#/components/parameters/course' }
+        - { $ref: '#/components/parameters/slug' }
+      responses:
+        '200':
+          description: The file
+          content:
+            image/png: { schema: { type: string, format: binary } }
+        '404': { description: No such demo, or no still uploaded yet }
+    put:
+      summary: Upload the still frame
+      operationId: putDemoStill
+      parameters:
+        - { $ref: '#/components/parameters/course' }
+        - { $ref: '#/components/parameters/slug' }
+        - { $ref: '#/components/parameters/ifMatch' }
+        - { $ref: '#/components/parameters/ifNoneMatch' }
+      requestBody:
+        required: true
+        content:
+          image/png: { schema: { type: string, format: binary } }
+      responses:
+        '200': { description: Written }
+        '400': { description: invalid_type or invalid_png }
+        '404': { description: No demo.json for this slug }
+        '413': { description: too_large — 1 MB }
+
+  /courses/{c}/lectures/{l}/demos/{slug}/demo.html:
+    get:
+      summary: The same document at a lecture-relative path, for the preview
+      description: >-
+        The preview page is shelled with relative asset paths, so
+        `demos/<slug>/demo.html` in its boot resolves against the lecture's own
+        route — exactly as `figures/` does. The bytes are the same object.
+      operationId: getLectureDemoHtml
+      parameters:
+        - { $ref: '#/components/parameters/course' }
+        - { $ref: '#/components/parameters/lecture' }
+        - { $ref: '#/components/parameters/slug' }
+      responses:
+        '200':
+          description: The file, with the demo CSP
+          content:
+            text/html: { schema: { type: string } }
+        '404': { description: No such demo }
+
+  /courses/{c}/lectures/{l}/demos/{slug}/still.png:
+    get:
+      summary: The same still at a lecture-relative path
+      operationId: getLectureDemoStill
+      parameters:
+        - { $ref: '#/components/parameters/course' }
+        - { $ref: '#/components/parameters/lecture' }
+        - { $ref: '#/components/parameters/slug' }
+      responses:
+        '200':
+          description: The file
+          content:
+            image/png: { schema: { type: string, format: binary } }
+        '404': { description: No such demo }
+
+  /courses/{c}/demos/{slug}/demo.json:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/slug'
+    get:
+      tags: [demos]
+      operationId: getDemoManifestFile
+      summary: The raw demo.json, exactly as stored.
+      description: |
+        `GET /courses/{c}/demos/{slug}` dresses the manifest for the studio —
+        ETags of the three files, `usedIn` — which is the wrong shape to write
+        to disk. `studio demos pull` wants the three files the format defines,
+        so the raw one is served beside `demo.html` and `still.png`.
+      responses:
+        '200':
+          description: The manifest file.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DemoManifest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+components:
+
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Two kinds of credential reach this API, and every route takes either:
+
+        - a **Cognito ID token**, which is what the studio SPA and
+          `studio login` send. The actor is the `email` claim and the groups
+          are `cognito:groups`.
+        - a **studio access token**, minted in the studio and held by an agent,
+          scoped to `read` / `write` / `publish` and optionally to one course.
+          It is shown once, at mint, and only its hash is stored; the event log
+          carries the token's id and label, never the secret.
+
+        On the local dev server there is no token at all: the header
+        `x-dev-user: you@example.com` is the actor, and `x-dev-groups: viewers`
+        makes it a read-only session. The server binds to localhost.
+
+  parameters:
+    slug:
+      name: slug
+      in: path
+      required: true
+      description: The demo's id in the course, and the folder it lives in.
+      schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,39}$' }
+    course:
+      name: c
+      in: path
+      required: true
+      description: the course id, a folder name
+      schema: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' }
+    lecture:
+      name: l
+      in: path
+      required: true
+      description: the lecture id, a folder name such as `L02-damped-driven`
+      schema: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' }
+    guideName:
+      name: name
+      in: path
+      required: true
+      schema: { type: string, enum: [conventions, glossary, syllabus, style] }
+    assetName:
+      name: name
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$' }
+    taskId:
+      name: id
+      in: path
+      required: true
+      description: the ULID the task was created with
+      schema: { type: string }
+    ifMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: |
+        The ETag from the `GET`. Required on a document save unless
+        `If-None-Match: *` is sent instead.
+      schema: { type: string }
+    ifNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      description: '`*` to create a document that does not exist yet.'
+      schema: { type: string, enum: ['*'] }
+    ifMatchOptional:
+      name: If-Match
+      in: header
+      required: false
+      description: Optional here; honoured when sent.
+      schema: { type: string }
+    changedBlocks:
+      name: x-changed-blocks
+      in: header
+      required: false
+      description: |
+        The ids of the blocks this save changed, comma-separated or as a JSON
+        array. Becomes the event summary. `?changed=a,b,c` does the same.
+      schema: { type: string }
+    studioClient:
+      name: x-studio-client
+      in: header
+      required: false
+      description: Recorded on the event, so history can say what wrote a block.
+      schema: { type: string }
+
+  headers:
+    ETag:
+      description: The quoted sha-1 of the body. Send it back as `If-Match`.
+      schema: { type: string }
+
+  responses:
+    unauthenticated:
+      description: No session.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    forbidden:
+      description: |
+        A `viewers` session tried to write, or an actor tried something that is
+        someone else's (a lock, another author's note, another author's brief).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    notFound:
+      description: No such thing.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    badRequest:
+      description: The request could not be acted on; `error` says which rule it broke.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    invalidDocument:
+      description: |
+        The document failed its JSON Schema. `path` is the JSON Pointer of the
+        offending key and `errors` carries up to ten of them.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationError' }
+    precondition:
+      description: |
+        Someone saved since you read. `etag` is what the store holds now and
+        `actor` and `ts` are who wrote it. Re-`GET`, re-apply your change,
+        and save again.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PreconditionError' }
+    tooLarge:
+      description: Over the cap for this kind of document.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    busy:
+      description: |
+        A concurrent write could not be reconciled in three attempts, or the
+        document is in a state that refuses this change.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    css:
+      description: The stylesheet.
+      content:
+        text/css:
+          schema: { type: string }
+
+  schemas:
+    DemoManifest:
+      type: object
+      required: [title]
+      properties:
+        slug:
+          type: string
+          description: Ignored on a PUT — the path is the key.
+          pattern: '^[a-z0-9][a-z0-9-]{1,39}$'
+        title: { type: string, description: 'May be Hebrew; it is what the gallery lists.' }
+        description: { type: string }
+        aspect:
+          type: number
+          description: height ÷ width; the frame is sized from it. Default 0.5.
+          minimum: 0.05
+          maximum: 3
+        author: { type: string }
+        version: { type: string }
+
+    DemoListing:
+      allOf:
+        - $ref: '#/components/schemas/DemoManifest'
+        - type: object
+          properties:
+            usedIn:
+              type: array
+              description: The lectures whose manifest wires this demo.
+              items: { type: string }
+            hasHtml: { type: boolean }
+            hasStill: { type: boolean }
+            etag: { type: string }
+            updatedAt: { type: string, format: date-time }
+            updatedBy: { type: string }
+            etags:
+              type: object
+              description: 'Per-file ETags, on the single-demo GET only.'
+              additionalProperties: { type: [string, 'null'] }
+    Token:
+      type: object
+      description: An access token's public half. `hash` is never served.
+      properties:
+        id: { type: string, description: ULID }
+        label: { type: string }
+        owner: { type: string }
+        groups: { type: array, items: { type: string } }
+        scopes: { type: array, items: { type: string, enum: [read, write, publish] } }
+        courses: { type: array, items: { type: string }, description: '`["*"]` or course ids' }
+        prefix: { type: string, description: '`cst_<ulid>` — the public half, what a log line shows' }
+        created: { type: string, format: date-time }
+        expires: { type: [string, 'null'], format: date-time }
+        lastUsed: { type: [string, 'null'], format: date-time }
+        revoked: { type: [string, 'null'], format: date-time }
+        state: { type: string, enum: [active, expired, revoked] }
+    AccessRecord:
+      type: object
+      properties:
+        email: { type: string }
+        roles:
+          type: object
+          additionalProperties: { type: string, enum: [author, viewer] }
+        created: { type: [string, 'null'], format: date-time }
+        updated: { type: [string, 'null'], format: date-time }
+        grantedBy: { type: [string, 'null'] }
+
+    Error:
+      type: object
+      required: [error, message]
+      description: |
+        The one error shape. `error` is a stable code; `message` is a sentence.
+        Codes in use: `unauthenticated`, `forbidden`, `not_found`, `no_route`,
+        `method_not_allowed`, `invalid_id`, `invalid_key`, `invalid_json`,
+        `empty_body`, `if_match_required`, `precondition`, `locked`,
+        `not_lock_holder`, `thread_busy`, `task_busy`, `task_started`,
+        `task_closed`, `not_requester`, `invalid_name`, `invalid_type`,
+        `extension_mismatch`, `wrong_folder`, `too_large`, `invalid_mode`,
+        `invalid_job`, `invalid_guide`, `invalid_manifest`, `invalid_course`,
+        `invalid_theme`, `invalid_preset`, `invalid_token`, `invalid_colour`,
+        `invalid_font`, `invalid_weight`, `bad_signature`, `key_not_allowed`,
+        `internal`.
+      properties:
+        error: { type: string }
+        message: { type: string }
+
+    ValidationError:
+      type: object
+      properties:
+        error: { type: string, enum: [invalid_manifest, invalid_course] }
+        message: { type: string }
+        path: { type: string, description: 'JSON Pointer, e.g. /demos/#demo-damped/exports' }
+        schema: { type: string, format: uri }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              path: { type: string }
+              message: { type: string }
+
+    PreconditionError:
+      type: object
+      properties:
+        error: { type: string, enum: [precondition] }
+        message: { type: string }
+        etag: { type: [string, 'null'] }
+        actor: { type: [string, 'null'] }
+        ts: { type: [string, 'null'], format: date-time }
+
+    Course:
+      type: object
+      description: '`course.json`. The authority is `docs/api/course.schema.json`.'
+      required: [id]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        titleEn: { type: [string, 'null'] }
+        term: { type: [string, 'null'] }
+        lecturer: { type: [string, 'null'] }
+        theme: { $ref: '#/components/schemas/Theme' }
+        platform: { type: string, description: 'the platform hash a published page loads' }
+        lectures:
+          type: array
+          items: { type: string }
+          description: "the lecture ids in the lecturer's own order"
+
+    Lecture:
+      type: object
+      description: |
+        `lecture.json`, the manifest. The authority is
+        `docs/api/lecture.schema.json`, which this repeats loosely; the API
+        validates against that file and not against this.
+      required: [id]
+      properties:
+        id: { type: string }
+        number: { type: integer }
+        title: { type: string }
+        docTitle: { type: string }
+        slidesTitle: { type: [string, 'null'] }
+        kicker: { type: array, items: { type: string } }
+        reading: { type: string }
+        demos: { $ref: '#/components/schemas/DemoMap' }
+        slideDemos: { $ref: '#/components/schemas/DemoMap' }
+        published: { $ref: '#/components/schemas/Published' }
+
+    DemoMap:
+      type: object
+      description: |
+        Keyed by the selector of the empty `<div>` in the fragment
+        (`#demo-damped`). A value is either `{module, export, opts?}` — a
+        platform demo out of the committed bundle, where `module` is a bundle
+        name and never a path — or `{kind: file, demo}`, a course-level user
+        demo by slug.
+      additionalProperties:
+        type: object
+        properties:
+          kind: { type: string, enum: [file] }
+          module: { type: string }
+          export: { type: string }
+          demo: { type: string }
+          opts: { type: object }
+
+    Published:
+      type: [object, 'null']
+      description: |
+        Written by the publish route and read-only to every client: a body
+        carrying it is a `400`.
+      properties:
+        at: { type: string, format: date-time }
+        version: { type: [string, 'null'] }
+        platform: { type: [string, 'null'] }
+
+    LectureSummary:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: [string, 'null'] }
+        number: { type: [integer, 'null'] }
+        lastModified: { type: [string, 'null'], format: date-time }
+        actor: { type: [string, 'null'] }
+        lastAction: { type: [string, 'null'] }
+        published: { $ref: '#/components/schemas/Published' }
+        openNotes: { type: integer }
+        hasSlides: { type: boolean }
+
+    GuideEntry:
+      type: object
+      properties:
+        name: { type: string, enum: [conventions, glossary, syllabus, style] }
+        size: { type: [integer, 'null'] }
+        lastModified: { type: [string, 'null'], format: date-time }
+        etag: { type: [string, 'null'] }
+
+    StoredDocument:
+      type: [object, 'null']
+      description: A fragment as the store holds it. `null` when there is none.
+      properties:
+        body: { type: string }
+        etag: { type: string }
+        versionId: { type: string }
+
+    SaveResult:
+      type: object
+      properties:
+        etag: { type: string }
+        versionId: { type: string }
+        idsAssigned: { type: integer, description: 'blocks that arrived with no data-id' }
+        bytes: { type: integer }
+
+    Version:
+      type: object
+      properties:
+        versionId: { type: string }
+        lastModified: { type: string, format: date-time }
+        etag: { type: string }
+        size: { type: integer }
+        actor: { type: [string, 'null'] }
+        ts: { type: [string, 'null'], format: date-time }
+        action: { type: [string, 'null'] }
+        summary: { type: [string, 'null'] }
+
+    Lock:
+      type: [object, 'null']
+      properties:
+        actor: { type: string }
+        acquired: { type: string, format: date-time }
+        expires: { type: string, format: date-time }
+
+    PresignedPost:
+      type: object
+      description: |
+        Step one of the two-step upload. POST the bytes to `url` as
+        `multipart/form-data` with every entry of `fields` first and the file
+        last. Locally `url` is `/api/_upload?…&sig=…`, which is the stand-in
+        for the presigned S3 POST and is authorised by its signature rather
+        than by a session.
+      properties:
+        key: { type: string }
+        url: { type: string }
+        fields: { type: object }
+        maxBytes: { type: integer }
+        contentType: { type: string }
+        href: { type: string, description: 'how the fragment should refer to it' }
+
+    PublishJob:
+      type: object
+      properties:
+        job: { type: string }
+        status: { type: string, enum: [copying, rendering, done, failed] }
+        actor: { type: string }
+        course: { type: string }
+        lecture: { type: string }
+        site: { type: string }
+        started: { type: string, format: date-time }
+        updated: { type: string, format: date-time }
+        keys: { type: array, items: { type: string } }
+        published: { $ref: '#/components/schemas/Published' }
+        pdf: { type: [string, 'null'] }
+        print: { type: [string, 'null'] }
+        error: { type: [string, 'null'] }
+
+    Anchor:
+      type: object
+      description: Where a note points. Resolved by block id, else by the quote.
+      properties:
+        section: { type: [string, 'null'] }
+        block: { type: [string, 'null'] }
+        quote: { type: [string, 'null'] }
+
+    Note:
+      type: object
+      properties:
+        id: { type: string }
+        author: { type: string }
+        created: { type: string, format: date-time }
+        updated: { type: string, format: date-time }
+        status: { type: string, enum: [open, done] }
+        anchor: { $ref: '#/components/schemas/Anchor' }
+        body: { type: string }
+        replies:
+          type: array
+          items:
+            type: object
+            properties:
+              author: { type: string }
+              created: { type: string, format: date-time }
+              body: { type: string }
+
+    Thread:
+      type: object
+      properties:
+        notes:
+          type: array
+          items: { $ref: '#/components/schemas/Note' }
+        etag: { type: string }
+
+    Task:
+      type: object
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [lecture-from-notes, figures, demo, other] }
+        title: { type: string }
+        brief: { type: string }
+        lecture: { type: [string, 'null'] }
+        number: { type: [integer, 'null'] }
+        author: { type: string }
+        created: { type: string, format: date-time }
+        updated: { type: string, format: date-time }
+        status: { type: string, enum: [requested, in-progress, done, declined] }
+        files:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              type: { type: string }
+              size: { type: integer }
+              uploaded: { type: string, format: date-time }
+              actor: { type: string }
+        log:
+          type: array
+          items:
+            type: object
+            properties:
+              ts: { type: string, format: date-time }
+              actor: { type: string }
+              text: { type: string }
+        result:
+          type: [object, 'null']
+          properties:
+            lecture: { type: [string, 'null'] }
+            note: { type: [string, 'null'] }
+
+    Theme:
+      type: object
+      description: |
+        A course's token set over `shared/theme/aegean.css`. The presets are
+        `aegean`, `chalk`, `spectrum` and `phase`; only vendored faces are
+        selectable, because the site's CSP is `font-src 'self' data:`.
+      properties:
+        base: { type: string, enum: [aegean] }
+        preset: { type: string, enum: [aegean, chalk, spectrum, phase] }
+        overrides:
+          type: object
+          description: token → `#RRGGBB`, for the twelve roles only
+          additionalProperties: { type: string, pattern: '^#[0-9a-fA-F]{6}$' }
+        fonts:
+          type: object
+          properties:
+            display: { type: string }
+            displayWeight: { type: integer }
+            body: { type: string }
+
+    ThemeResponse:
+      type: object
+      description: Everything the theme panel draws, in one answer.
+      properties:
+        theme: { $ref: '#/components/schemas/Theme' }
+        effective: { type: object }
+        fontsResolved: { type: object }
+        name: { type: string }
+        css: { type: string }
+        presets: { type: array, items: { type: object } }
+        roles: { type: array, items: { type: array, items: { type: string } } }
+        fonts: { type: object }
+        verdict:
+          type: object
+          description: 'the colour-vision check; a failing one is reported, never refused'
+          properties:
+            level: { type: string, enum: [ok, warn, fail] }
+            issues: { type: array, items: { type: string } }
+            mode: { type: [string, 'null'] }
+
+    Event:
+      type: object
+      description: |
+        One record per mutation. `action` is one of `notes.save`,
+        `slides.save`, `manifest.save`, `course.save`, `figure.upload`,
+        `theme.save`, `guide.save`, `publish.start`, `publish.done`,
+        `publish.failed`, `restore`, `note.add`, `note.reply`, `note.resolve`,
+        `note.reopen`, `note.delete`, `lock.acquire`, `lock.release`, `import`,
+        `task.add`, `task.update`, `task.file`, `task.delete`.
+      properties:
+        ts: { type: string, format: date-time }
+        actor: { type: [string, 'null'] }
+        tenant: { type: string }
+        course: { type: [string, 'null'] }
+        lecture: { type: [string, 'null'] }
+        action: { type: string }
+        key: { type: [string, 'null'] }
+        version: { type: [string, 'null'] }
+        etag: { type: [string, 'null'] }
+        summary: { type: [string, 'null'] }
+        bytes: { type: [integer, 'null'] }
+        client: { type: [string, 'null'] }
