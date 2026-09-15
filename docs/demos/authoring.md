@@ -110,35 +110,23 @@ Course page → **Demos** → *Add a demo*. Give it a title, a slug and the two 
 It runs in the panel, in the real sandboxed frame with the course's theme, before
 anything is saved. That preview is the check; there is no other.
 
-### The CLI
-
-```bash
-npm install -g @fieldwork-group/studio     # once
-studio login
-studio demos list
-studio demos push  courses/<course>/demos/<slug>     # one demo, up
-studio demos pull  courses/<course>                  # the whole library, down
-```
-
-`studio pull <lecture-dir>` also writes the demos that lecture wires, so the pulled
-`notes.html` opens by double-clicking with the demo running.
-
 ### An agent, over MCP
 
 The studio publishes a **remote MCP server** — one URL added in Claude as a custom
 connector, signed in with your studio account, no token on your laptop. The tools
 `studio_list_demos`, `studio_put_demo` (the three files inline, the still base64)
 and `studio_delete_demo` are the routes below, and the agent sees the same errors
-you would. The connector URL is `https://<the studio host>/api/mcp` **once
-deployed**; the studio's own documentation carries the current address, and Claude
-Code takes the same URL with `claude mcp add --transport http`.
+you would. The connector URL is `https://studio.fieldwork-group.com/api/mcp`;
+Claude Code takes the same URL with `claude mcp add --transport http`. The
+setup for each Claude surface is in [`AGENTS.md`](../../AGENTS.md).
 
 ### curl, with a token
 
-Mint a token in the studio (scoped `write`, and to one course if you like) and:
+Mint a token in the studio — **API access** in the account menu — scoped `write`,
+and to one course if you like, and:
 
 ```bash
-STUDIO=https://<the studio host>/api
+STUDIO=https://studio.fieldwork-group.com/api
 COURSE=<course>
 SLUG=my-demo
 

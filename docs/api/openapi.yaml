@@ -75,6 +75,8 @@ tags:
     description: High-effort requests and their attachments.
   - name: dev
     description: The local stand-ins for presigned S3 URLs. Not deployed.
+  - name: public
+    description: What a visitor with no account may read.
 
 paths:
 
@@ -117,6 +119,13 @@ paths:
                     type: array
                     items: { type: string, enum: [authors, viewers] }
                   tenant: { type: string }
+                  opened:
+                    type: array
+                    items: { type: string }
+                    description: the courses the caller opened with `POST /courses` (empty for an administrator)
+                  courseLimit:
+                    type: [integer, 'null']
+                    description: how many the caller may open in all; null for an administrator, who is not counted
                   dev: { type: boolean, description: 'true on the local dev server' }
                   connector:
                     type: string
@@ -126,6 +135,64 @@ paths:
                       an access token. Public by design; the secret beside it
                       is not, and appears in no response at all.
         '401': { $ref: '#/components/responses/unauthenticated' }
+
+  /public/courses:
+    get:
+      tags: [public]
+      operationId: listPublicCourses
+      summary: The published courses, with a link per published lecture.
+      description: |
+        **No credential.** The only route on this API that needs none: it is
+        what the studio's landing page draws for a signed-out visitor, and the
+        gateway reaches it without the authorizer.
+
+        Only **published** lectures appear, computed from `published` on each
+        lecture manifest exactly as `GET /courses/{c}` computes it, and a
+        course with no published lecture is not listed at all. Nothing from a
+        draft is in the answer — no notes, no guides, no members, no grants,
+        no publish version. `GET /courses` is the other list and is not this
+        one: it is filtered by the caller's grants and carries draft state.
+
+        `site` is the origin the published notes are served from, and each
+        lecture's `url` is `site + /<course>/<lecture>/notes` — the page
+        `POST …/publish` wrote. `cache-control: public, max-age=300`.
+      security: []
+      responses:
+        '200':
+          description: The published courses.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [site, courses]
+                properties:
+                  site:
+                    type: string
+                    description: 'the origin the published notes are on, no trailing slash'
+                  courses:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, title, titleEn, term, lecturer, lang, lectures]
+                      properties:
+                        id: { type: string }
+                        title: { type: [string, 'null'], description: 'the Hebrew name' }
+                        titleEn: { type: [string, 'null'] }
+                        term: { type: [string, 'null'] }
+                        lecturer: { type: [string, 'null'] }
+                        lang: { type: string, description: "the course language, `he` unless it says otherwise" }
+                        lectures:
+                          type: array
+                          description: 'the published lectures, in lecture-number order'
+                          items:
+                            type: object
+                            required: [id, number, title, url, publishedAt]
+                            properties:
+                              id: { type: string }
+                              number: { type: [integer, 'null'] }
+                              title: { type: [string, 'null'] }
+                              url: { type: string, description: 'the notes page on the courses site' }
+                              publishedAt: { type: [string, 'null'], format: date-time }
 
   /courses:
     get:
@@ -153,6 +220,53 @@ paths:
                         lectures: { type: integer, description: 'how many, not which' }
                         lastModified: { type: [string, 'null'], format: date-time }
         '401': { $ref: '#/components/responses/unauthenticated' }
+    post:
+      tags: [courses]
+      operationId: createCourse
+      summary: Open a new course, and become its author.
+      description: |
+        For a lecturer starting a course of their own. Any `authors` session
+        may call it; the caller is granted `author` on the new course in the
+        same request, so it is in their next `GET /courses`. A signed-in
+        session only — a token or a connector gets `403 session_required`,
+        because a held credential must not be able to widen its owner's reach.
+
+        The body is `course.json` without `lectures`: `id` (the URL slug,
+        Latin letters, digits, `.`, `_` and `-`) and `title` are required.
+        `409 course_exists` when the id is taken. Events `course.create` and
+        `access.grant`.
+
+        **Capped**: a user may open `courseLimit` courses (ten unless an
+        administrator raised it on their access record), counted by the
+        record's `opened` list. Over it is `403 course_limit` with `opened`
+        and `limit` in the body. Administrators are not counted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Course' }
+      responses:
+        '201':
+          description: Created, and granted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  course: { $ref: '#/components/schemas/Course' }
+                  etag: { type: string }
+                  versionId: { type: string }
+                  role:
+                    type: string
+                    enum: [author, admin]
+                    description: what the caller now is on the course
+        '400': { $ref: '#/components/responses/invalidDocument' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '409':
+          description: A course with that id already exists.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /courses/{c}:
     parameters:
@@ -209,6 +323,28 @@ paths:
                   versionId: { type: string }
         '400': { $ref: '#/components/responses/invalidDocument' }
         '403': { $ref: '#/components/responses/forbidden' }
+    delete:
+      tags: [courses]
+      operationId: deleteCourse
+      summary: Delete the course, whole. Administrators only, with the id repeated.
+      description: |
+        Removes every object under the course — lectures, figures, demos,
+        notes, requests, theme — and cleans the course out of every access
+        record, which frees the opener's slot under the cap. The versioned
+        bucket is the only undo. The published copy on the site is not
+        touched. Event `course.delete`.
+      parameters:
+        - name: confirm
+          in: query
+          required: true
+          description: The course id again. Anything else is `400 confirm_required`.
+          schema: { type: string }
+      responses:
+        '204':
+          description: Deleted.
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
 
   /courses/{c}/guides:
     parameters:
@@ -1329,6 +1465,14 @@ paths:
                 roles:
                   type: object
                   additionalProperties: { type: string, enum: [author, viewer] }
+                courseLimit:
+                  type: [integer, 'null']
+                  minimum: 0
+                  maximum: 1000
+                  description: |
+                    How many courses this user may open with `POST /courses`;
+                    `null` returns them to the default (ten). Absent leaves
+                    it alone. `opened` is not writable here.
       responses:
         '200':
           description: Written.
@@ -1972,6 +2116,13 @@ components:
         roles:
           type: object
           additionalProperties: { type: string, enum: [author, viewer] }
+        opened:
+          type: array
+          items: { type: string }
+          description: the courses this user opened with `POST /courses`; the cap counts these
+        courseLimit:
+          type: [integer, 'null']
+          description: an administrator's override of the default cap (ten), or null
         created: { type: [string, 'null'], format: date-time }
         updated: { type: [string, 'null'], format: date-time }
         grantedBy: { type: [string, 'null'] }
