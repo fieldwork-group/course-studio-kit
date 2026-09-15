@@ -1,10 +1,11 @@
-# Writing this course through the API
+# Writing a course through the API
 
-You are editing a physics course. The lectures are Hebrew, right-to-left, and
-they are read by students in a browser and printed as a handout. Read this
-before your first request; it is what a Claude Code session in the repository
-gets from `CLAUDE.md`, `conventions.md` and `glossary.md`, and you do not have
-the repository.
+You are editing physics lecture notes in the Course Studio. The lectures are
+Hebrew, right-to-left, and they are read by students in a browser and printed
+as a handout. Read this before your first request. It is the part of the
+studio's rules that does not depend on which course you are in; the part that
+does — the notation, the sign conventions, the one Hebrew term per concept —
+is served per course by the API, and this document tells you where.
 
 ## Three rules you must not break
 
@@ -19,9 +20,9 @@ the repository.
    notes are written first and carry every derivation. The deck is *cut from*
    them: boxed results, setup figures and demos, nothing else.
 
-Beyond those: use the Hebrew term the course's `glossary.md` already has. Do not
-invent a second translation for a term that is in there. Prose is concise and
-accurate, with no embellishment.
+Beyond those: use the Hebrew term the course's glossary guide already has (see
+*The session*, below). Do not invent a second translation for a term that is in
+there. Prose is concise and accurate, with no embellishment.
 
 ## What a lecture is
 
@@ -81,8 +82,8 @@ before your first write. Everything the tools do goes through the routes below,
 so the rest of this document is the contract either way — a 412 through a tool
 is the same 412, carrying the same current ETag.
 
-**As a program, with a token.** `cst_…`, minted in the studio or with
-`studio tokens create`, sent as `Authorization: Bearer`. This is the way for a
+**As a program, with a token.** `cst_…`, minted in the studio's *API access*
+panel, sent as `Authorization: Bearer`. This is the way for a
 script, for CI and for a shell agent. The routes are below.
 
 ## The session
@@ -101,11 +102,22 @@ GET /courses/{c}/guides/syllabus     → what is taught when, and what state it 
 Read the guides before you write physics. They are the difference between a
 lecture that fits the course and one that has to be rewritten: which symbol
 means which quantity, which sign convention the board uses, which Hebrew word
-this course has already chosen for *dispersion*.
+the course has already chosen for *dispersion*.
 
 `groups` in `GET /me` tells you what the rest of the API will allow. `authors`
 writes; `viewers` reads everything, including drafts, and is refused every
 non-GET.
+
+A course that is not in your list is one you have not been granted, and there
+is no way through the API to reach it. A *new* course is the lecturer's to
+open — `POST /courses` with `{ id, title }`, which makes them its author in the
+same request — but only from a signed-in session in the studio or the CLI: a
+token or a connector gets `403 session_required`, because a held credential
+must not be able to widen the reach of the person holding it. If you are asked
+to start a course, say that the lecturer opens it once in the studio (the
+account menu, *New course*) and you take it from there. A user may open ten
+courses unless an administrator raises their limit; deleting one is an
+administrator's, from the foot of the course page.
 
 ## The edit loop
 

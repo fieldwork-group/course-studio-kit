@@ -235,7 +235,7 @@ and a `still.png` — a screenshot of the canvas at `t = 0` is exactly right, an
 
 ## Getting a demo into a course
 
-Three ways, all the same three files and the same API underneath;
+Two ways, both the same three files and the same API underneath;
 [`authoring.md`](authoring.md) has the commands.
 
 **In the studio.** Course page → *Demos* → *Add a demo*: the title, the slug, the
@@ -243,9 +243,8 @@ two files. The demo runs in the panel, in the real sandboxed frame, with the
 course's theme applied, **before** anything is saved. That preview is the check;
 there is no other.
 
-**On the command line**, with the `studio` CLI.
-
-**Over the API**, which is what an agent uses:
+**Over the API**, which is what an agent uses — through the connector's
+`studio_put_demo`, or with a token and curl:
 
 ```
 PUT    /courses/{c}/demos/{slug}              the demo.json fields
