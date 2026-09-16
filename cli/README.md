@@ -52,7 +52,7 @@ any folder inside it — so nothing else has to hold it. An exported
 | `notes list \| add \| reply \| done \| reopen \| delete` | the author-notes thread — where an agent asks instead of guessing | 2 no such note |
 | `demos list \| pull \| push` | the course's demos, three files each under `courses/<id>/demos/<slug>/` | 2 no `demo.json` · 3 conflict |
 | `publish [<lecture-dir>]` | publish and wait for the job | 4 job failed |
-| `import <lecture-dir>… [--course id]` | first-time push of a lecture folder that the studio does not have yet | |
+| `import <lecture-dir>… [--course id] [--title "…"]` | first-time push of a lecture folder that the studio does not have yet | |
 | `login [--api <origin>]` | sign in with a browser instead of a token, cached in `~/.config/studio/` | 1 refused or timed out |
 | `tokens create \| list \| revoke` | mint and revoke access tokens — **a signed-in session, not a token** | |
 | `reader set \| show <course>` | the password students type to open the published notes — **a signed-in session** | |
@@ -64,6 +64,13 @@ successor, widen its owner's reach, or change the door students walk through.
 
 `--api <origin>` names the studio; after `init` it comes from
 `.studio/config.json` and you do not pass it again.
+
+**A course `import` has to open gets its id as its title**, unless `--title`
+says otherwise — `studio import ./L01 --course optics --title "אופטיקה"`. The
+rest of a course's identity (the English title, the term, the lecturer line,
+the look) is edited in the studio, on the course page, where you can see what
+you are typing; there are no flags for it here, and a title you do not like is
+one field to change.
 
 ## The layout `pull` writes
 
