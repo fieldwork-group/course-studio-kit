@@ -322,16 +322,16 @@ The manifest, `PUT /courses/{c}/lectures/{l}/manifest`, keyed by the selector:
 
 ```json
 { "demos": {
-    "#demo-mass-spring": { "module": "mass-spring", "export": "MassSpring",
-                           "opts": { "maxHeight": 400 } },
-    "#demo-pendulum-lab": { "kind": "file", "demo": "pendulum-lab" } } }
+    "#demo-pendulum-lab": { "kind": "file", "demo": "pendulum-lab",
+                            "aspect": 0.5, "title": "Pendulum lab" } } }
 ```
 
-The first is a **platform demo**: `module` is a name in the committed demo
-bundle, never a path, and the platform resolves the export against it. The
-second is a **course demo**: one self-contained HTML file uploaded to the
-course, run in a sandboxed frame with no network. Use a platform demo when one
-exists that shows the physics; write a course demo when none does.
+There is one kind of demo: one self-contained HTML file the course owns, run
+in a sandboxed frame with no network. `demo` is its slug — `GET
+/courses/{c}/demos` lists them — and `aspect` and `title` are copied off that
+demo's own `demo.json` so a published page needs no API to size the frame.
+`docs/demos/format.md` is the format; write a demo when the course has none
+that shows the point.
 
 `published` is not yours. The publish route writes it; a manifest body carrying
 it is a `400`, and the stored value is kept for you when you leave it out.

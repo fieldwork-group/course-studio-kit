@@ -2144,18 +2144,20 @@ components:
       type: object
       description: |
         Keyed by the selector of the empty `<div>` in the fragment
-        (`#demo-damped`). A value is either `{module, export, opts?}` — a
-        platform demo out of the committed bundle, where `module` is a bundle
-        name and never a path — or `{kind: file, demo}`, a course-level user
-        demo by slug.
+        (`#demo-damped`). A value is `{kind: file, demo}` — one of the
+        course's own demos, by slug — with `aspect` and `title` copied off
+        that demo's `demo.json` when it was wired, because a published page
+        has no API to ask. The shape that named a class in the platform
+        bundle (`{module, export, opts}`) was removed on 2026-09-16; a body
+        carrying one is a `400` whose message names the slug to wire instead.
       additionalProperties:
         type: object
+        required: [kind, demo]
         properties:
           kind: { type: string, enum: [file] }
-          module: { type: string }
-          export: { type: string }
           demo: { type: string }
-          opts: { type: object }
+          aspect: { type: number }
+          title: { type: string }
 
     Published:
       type: [object, 'null']

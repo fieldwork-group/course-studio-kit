@@ -13935,8 +13935,8 @@ async function login({
 }
 
 // studio/cli/src/import.js
-import fs4 from "node:fs/promises";
-import path4 from "node:path";
+import fs7 from "node:fs/promises";
+import path7 from "node:path";
 
 // studio/node_modules/orderedmap/dist/index.js
 function OrderedMap(content) {
@@ -17411,11 +17411,6 @@ function writeLiteral(v) {
 
 // studio/schema/src/split.js
 var text = (el) => el ? el.textContent.replace(/\s+/g, " ").trim() : "";
-function bundleName(modulePath) {
-  if (!modulePath) return null;
-  const m = /([^/]+?)(?:\.m?js)?$/.exec(String(modulePath));
-  return m ? m[1] : null;
-}
 function bootScript(doc) {
   const scripts = [...doc.querySelectorAll("script")].filter((s) => !s.getAttribute("src"));
   return scripts.length ? scripts[scripts.length - 1].textContent : "";
@@ -17425,18 +17420,11 @@ function demoSlug(src) {
   return m ? m[1] : null;
 }
 function demoEntry(d) {
-  if (d?.kind === "file") {
-    return {
-      kind: "file",
-      demo: d.demo ?? demoSlug(d.src) ?? demoSlug(d.still),
-      ...d.aspect != null ? { aspect: d.aspect } : {},
-      ...d.title ? { title: d.title } : {}
-    };
-  }
   return {
-    module: bundleName(d.module),
-    export: d.export,
-    ...d.opts && Object.keys(d.opts).length ? { opts: d.opts } : {}
+    kind: "file",
+    demo: d.demo ?? demoSlug(d.src) ?? demoSlug(d.still),
+    ...d.aspect != null ? { aspect: d.aspect } : {},
+    ...d.title ? { title: d.title } : {}
   };
 }
 function notesDemos(src) {
@@ -17452,19 +17440,10 @@ function notesDemos(src) {
 }
 function slideDemos(src) {
   const out = {};
-  const re = /\bmount\(\s*(['"])(.*?)\1\s*,\s*([A-Za-z_$][\w$]*)\s*(?:,\s*(\{))?/g;
-  for (let m = re.exec(src); m; m = re.exec(src)) {
-    const entry = { export: m[3] };
-    if (m[4]) {
-      const { value } = readLiteral(src, src.indexOf("{", m.index + m[0].length - 1));
-      if (value && Object.keys(value).length) entry.opts = value;
-    }
-    out[m[2]] = entry;
-  }
   const frame = /\bmountFrame\(\s*(['"])(.*?)\1\s*,\s*\{/g;
   for (let m = frame.exec(src); m; m = frame.exec(src)) {
     const { value } = readLiteral(src, src.indexOf("{", m.index + m[0].length - 1));
-    out[m[2]] = demoEntry({ ...value, kind: "file" });
+    out[m[2]] = demoEntry(value);
   }
   return out;
 }
@@ -17730,8 +17709,8 @@ function fileDemoFields(d, D, indent) {
   if (d.title) out.push(`${i}title: ${writeLiteral(d.title)},`);
   return out;
 }
-function notesBoot(P, demos, D) {
-  const sels = Object.keys(demos || {});
+function notesBoot(demos, D) {
+  const sels = Object.keys(demos || {}).filter((s) => isFileDemo(demos[s]));
   const lines = [];
   lines.push("<script>");
   lines.push(BOOT_COMMENT_NOTES);
@@ -17742,15 +17721,8 @@ function notesBoot(P, demos, D) {
     lines.push("    bootNotes({");
     lines.push("      demos: {");
     for (const sel of sels) {
-      const d = demos[sel];
       lines.push(`        '${sel}': {`);
-      if (isFileDemo(d)) {
-        lines.push(...fileDemoFields(d, D, 10));
-      } else {
-        if (d.module) lines.push(`          module: '${P}/demos/src/physics/${d.module}.js',`);
-        lines.push(`          export: '${d.export}',`);
-        if (d.opts && Object.keys(d.opts).length) lines.push(`          opts: ${writeLiteral(d.opts)},`);
-      }
+      lines.push(...fileDemoFields(demos[sel], D, 10));
       lines.push("        },");
     }
     lines.push("      },");
@@ -17761,27 +17733,15 @@ function notesBoot(P, demos, D) {
   return lines.join("\n");
 }
 function slidesBoot(demos, D) {
-  const sels = Object.keys(demos || {});
-  const classSels = sels.filter((s) => !isFileDemo(demos[s]));
-  const exports = [...new Set(classSels.map((s) => demos[s].export))];
+  const sels = Object.keys(demos || {}).filter((s) => isFileDemo(demos[s]));
   const lines = [];
   lines.push("<script>");
   lines.push("  window.addEventListener('DOMContentLoaded', async function () {");
   lines.push("    await CourseDeck.boot();");
-  if (exports.length) {
-    lines.push(`    var mount = WavesDemos.mount, ${exports.map((e) => `${e} = WavesDemos.${e}`).join(", ")};`);
-  }
   for (const sel of sels) {
-    const d = demos[sel];
-    if (isFileDemo(d)) {
-      lines.push(`    WavesDemos.mountFrame('${sel}', {`);
-      lines.push(...fileDemoFields(d, D, 6));
-      lines.push("    });");
-      continue;
-    }
-    if (!exports.length) continue;
-    const opts = d.opts && Object.keys(d.opts).length ? `, ${writeLiteral(d.opts)}` : "";
-    lines.push(`    mount('${sel}', ${d.export}${opts});`);
+    lines.push(`    CourseDemos.mountFrame('${sel}', {`);
+    lines.push(...fileDemoFields(demos[sel], D, 6));
+    lines.push("    });");
   }
   lines.push("  });");
   lines.push("</script>");
@@ -17866,7 +17826,7 @@ function shell({
     "</div>"
   ].join("\n");
   if (mode === "preview") return body + "\n";
-  const hasDemos = Object.keys(manifest.demos || {}).length > 0;
+  const hasDemos = Object.values(manifest.demos || {}).some(isFileDemo);
   return [
     "<!DOCTYPE html>",
     `<html dir="${dir}" lang="${lang}">`,
@@ -17886,7 +17846,7 @@ function shell({
     "",
     ...hasDemos ? [`<script defer src="${P}/demos/dist/demos.js"></script>`] : [],
     `<script defer src="${P}/shared/notes.js"></script>`,
-    notesBoot(P, manifest.demos, D),
+    notesBoot(manifest.demos, D),
     "",
     "</body>",
     "</html>",
@@ -18083,129 +18043,14 @@ async function pushGuides(client, course, courseDir, known = {}, { log = console
   return { pushed, etags };
 }
 
-// studio/cli/src/import.js
-var courseSeed = (id, title) => ({
-  id,
-  title: title || id,
-  theme: { base: "aegean", overrides: {} },
-  lectures: []
-});
-var UPLOAD_TYPES = {
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".json": "application/json"
-};
-function courseIdFor(lectureDir) {
-  const parts = path4.resolve(lectureDir).split(path4.sep);
-  const i = parts.lastIndexOf("courses");
-  if (i < 0 || !parts[i + 1]) return null;
-  return parts[i + 1].split("-")[0];
-}
-function mergeManifests(notes, slides) {
-  const out = { ...notes };
-  delete out.kind;
-  if (slides) {
-    out.slidesTitle = slides.docTitle ?? slides.title ?? null;
-    out.slideDemos = slides.demos ?? {};
-  }
-  return out;
-}
-async function readIf2(file) {
-  try {
-    return await fs4.readFile(file, "utf8");
-  } catch {
-    return null;
-  }
-}
-async function listFiles(dir) {
-  try {
-    const names = await fs4.readdir(dir, { withFileTypes: true });
-    return names.filter((d) => d.isFile()).map((d) => d.name);
-  } catch {
-    return [];
-  }
-}
-async function importLecture(client, lectureDir, { course, author, title, log = console.log } = {}) {
-  await useNodeDom();
-  const dir = path4.resolve(lectureDir);
-  const id = path4.basename(dir);
-  const c = course ?? courseIdFor(dir);
-  if (!c) {
-    throw new Error(
-      `which course is ${dir} part of? it is not under a \`courses/<id>/\` path, so say so:
-  studio import ${lectureDir} --course <id>`
-    );
-  }
-  const notesHtml = await readIf2(path4.join(dir, "notes.html"));
-  if (!notesHtml) throw new Error(`no notes.html in ${dir}`);
-  const slidesHtml = await readIf2(path4.join(dir, "slides.html"));
-  const notes = split(notesHtml, { kind: "notes", id });
-  const slides = slidesHtml ? split(slidesHtml, { kind: "slides", id }) : null;
-  const manifest = mergeManifests(notes.manifest, slides?.manifest);
-  const have = await client.call("GET", `/courses/${c}`);
-  if (have.status === 404) {
-    const { lectures: _none, ...seed } = courseSeed(c, title);
-    const made = await client.call("POST", "/courses", { body: seed });
-    if (made.status === 403) {
-      throw new Error(
-        `could not create course ${c} (${made.json?.error ?? made.status}): opening a course needs a signed-in author — run \`studio login\` rather than importing with a token, or import into a course that exists`
-      );
-    }
-    if (made.status >= 300) throw new Error(`could not create course ${c}: ${made.status} ${made.text}`);
-    log(`created course ${c} (you are its author)`);
-    if (author) await grantAuthor(client, c, author, log);
-  } else if (have.status >= 300) {
-    throw new Error(`GET /courses/${c}: ${have.status} ${have.text}`);
-  } else if (author) {
-    log(`  course ${c} already exists; --author ${author} not applied (use \`studio access grant\`)`);
-  }
-  const put = await client.call("PUT", `/courses/${c}/lectures/${id}`, {
-    body: { manifest, notes: notes.fragment, slides: slides?.fragment }
-  });
-  if (put.status >= 300) throw new Error(`import ${id}: ${put.status} ${put.text}`);
-  log(`imported ${c}/${id}: notes ${put.json.notes.idsAssigned} ids` + (put.json.slides ? `, slides ${put.json.slides.idsAssigned} ids` : ""));
-  const { pushed } = await pushGuides(client, c, courseDirFor(dir), {}, { log });
-  for (const name of pushed) log(`  pushed ${name}`);
-  for (const sub of ["figures", "data"]) {
-    for (const name of await listFiles(path4.join(dir, sub))) {
-      const type = UPLOAD_TYPES[path4.extname(name).toLowerCase()];
-      if (!type) {
-        log(`  skip ${sub}/${name} (type not allowed)`);
-        continue;
-      }
-      const bytes = await fs4.readFile(path4.join(dir, sub, name));
-      const pre = await client.call("POST", `/courses/${c}/lectures/${id}/uploads`, {
-        body: { name, type, size: bytes.length, dir: sub }
-      });
-      if (pre.status >= 300) throw new Error(`presign ${sub}/${name}: ${pre.status} ${pre.text}`);
-      const up = await client.upload(pre.json, bytes, type);
-      if (up.status >= 300) throw new Error(`upload ${sub}/${name}: ${up.status} ${up.text}`);
-      log(`  uploaded ${sub}/${name} (${bytes.length} B)`);
-    }
-  }
-  return { course: c, id, manifest };
-}
-async function grantAuthor(client, course, email, log) {
-  const current = await client.call("GET", `/access/${encodeURIComponent(email)}`);
-  if (current.status >= 300 && current.status !== 404) {
-    throw new Error(`could not read ${email}'s access record: ${current.status} ${current.text}`);
-  }
-  const roles = { ...current.json?.roles ?? {}, [course]: "author" };
-  const put = await client.call("PUT", `/access/${encodeURIComponent(email)}`, { body: { roles } });
-  if (put.status >= 300) throw new Error(`could not grant ${email} on ${course}: ${put.status} ${put.text}`);
-  log(`granted ${email} author on ${course}`);
-}
-
-// studio/cli/src/pull.js
-import fs7 from "node:fs/promises";
-import path7 from "node:path";
+// studio/cli/src/demos.js
+import fs5 from "node:fs/promises";
+import path5 from "node:path";
 
 // studio/cli/src/state.js
-import fs5 from "node:fs";
+import fs4 from "node:fs";
 import fsp from "node:fs/promises";
-import path5 from "node:path";
+import path4 from "node:path";
 var STATE_DIR = ".studio";
 var CliError = class extends Error {
   constructor(message, code = 1) {
@@ -18216,7 +18061,7 @@ var CliError = class extends Error {
 };
 var isDir = (p) => {
   try {
-    return fs5.statSync(p).isDirectory();
+    return fs4.statSync(p).isDirectory();
   } catch {
     return false;
   }
@@ -18225,9 +18070,9 @@ function takeDir(rest2) {
   if (rest2.length && isDir(rest2[0])) return [rest2[0], rest2.slice(1)];
   return [".", rest2];
 }
-var stateFile = (dir) => path5.join(dir, STATE_DIR, "state.json");
-var threadFile = (dir) => path5.join(dir, STATE_DIR, "author-notes.json");
-var configFile = (dir) => path5.join(dir, STATE_DIR, "config.json");
+var stateFile = (dir) => path4.join(dir, STATE_DIR, "state.json");
+var threadFile = (dir) => path4.join(dir, STATE_DIR, "author-notes.json");
+var configFile = (dir) => path4.join(dir, STATE_DIR, "config.json");
 async function readState(dir) {
   try {
     return JSON.parse(await fsp.readFile(stateFile(dir), "utf8"));
@@ -18236,31 +18081,31 @@ async function readState(dir) {
   }
 }
 async function findConfig(from = ".") {
-  let dir = path5.resolve(from);
+  let dir = path4.resolve(from);
   for (; ; ) {
     try {
       const config = JSON.parse(await fsp.readFile(configFile(dir), "utf8"));
       return { dir, config };
     } catch {
     }
-    const up = path5.dirname(dir);
+    const up = path4.dirname(dir);
     if (up === dir) return null;
     dir = up;
   }
 }
 async function writeState(dir, state) {
-  await fsp.mkdir(path5.join(dir, STATE_DIR), { recursive: true });
+  await fsp.mkdir(path4.join(dir, STATE_DIR), { recursive: true });
   await fsp.writeFile(stateFile(dir), `${JSON.stringify(state, null, 2)}
 `, "utf8");
   return state;
 }
 async function writeThread(dir, thread) {
-  await fsp.mkdir(path5.join(dir, STATE_DIR), { recursive: true });
+  await fsp.mkdir(path4.join(dir, STATE_DIR), { recursive: true });
   await fsp.writeFile(threadFile(dir), `${JSON.stringify(thread, null, 2)}
 `, "utf8");
 }
 async function openLecture({ dir = ".", api, user, token, course, requireState = true } = {}) {
-  const abs = path5.resolve(dir);
+  const abs = path4.resolve(dir);
   const state = await readState(abs);
   if (requireState && !state) {
     throw new CliError(
@@ -18292,7 +18137,7 @@ async function openLecture({ dir = ".", api, user, token, course, requireState =
     client,
     config,
     course: resolved,
-    lecture: state?.lecture ?? path5.basename(abs)
+    lecture: state?.lecture ?? path4.basename(abs)
   };
 }
 function apiMessage(res) {
@@ -18309,27 +18154,25 @@ function expectOk(res, what) {
 }
 
 // studio/cli/src/demos.js
-import fs6 from "node:fs/promises";
-import path6 from "node:path";
 var FILES = [
   { name: "demo.json", type: "application/json" },
   { name: "demo.html", type: "text/html; charset=utf-8" },
   { name: "still.png", type: "image/png" }
 ];
 var SLUG = /^[a-z0-9][a-z0-9-]{1,39}$/;
-async function readIf3(file) {
+async function readIf2(file) {
   try {
-    return await fs6.readFile(file);
+    return await fs5.readFile(file);
   } catch {
     return null;
   }
 }
 async function writeFile(file, body) {
-  await fs6.mkdir(path6.dirname(file), { recursive: true });
-  await fs6.writeFile(file, body);
+  await fs5.mkdir(path5.dirname(file), { recursive: true });
+  await fs5.writeFile(file, body);
 }
-var demosDirFor = (courseDir) => path6.join(path6.resolve(courseDir), "demos");
-var demosDirForLecture = (lectureDir) => path6.resolve(lectureDir, "..", "..", "demos");
+var demosDirFor = (courseDir) => path5.join(path5.resolve(courseDir), "demos");
+var demosDirForLecture = (lectureDir) => path5.resolve(lectureDir, "..", "..", "demos");
 async function demosList(client, { course, json = false, log = console.log } = {}) {
   const res = await client.call("GET", `/courses/${course}/demos`);
   const body = expectOk(res, `GET ${course}/demos`);
@@ -18363,7 +18206,7 @@ async function pullDemo(client, { course, slug, dir, log = console.log }) {
       log(`  ! ${slug}/${file.name}: ${res.status}`);
       continue;
     }
-    await writeFile(path6.join(dir, slug, file.name), res.bytes);
+    await writeFile(path5.join(dir, slug, file.name), res.bytes);
     etags[file.name] = res.headers.get("etag") ?? null;
     written.push(`${slug}/${file.name}`);
   }
@@ -18381,7 +18224,7 @@ async function demosPull(client, courseDir, { course, only = null, announce = tr
     etags[demo.slug] = got.etags;
     written.push(...got.written);
   }
-  const root = path6.resolve(courseDir);
+  const root = path5.resolve(courseDir);
   const state = await readState(root);
   await writeState(root, {
     ...state ?? {},
@@ -18396,13 +18239,13 @@ async function demosPull(client, courseDir, { course, only = null, announce = tr
   }
   return { dir, course, demos: wanted.map((d) => d.slug), written, etags };
 }
-async function demosPush(client, demoDir, { course, log = console.log } = {}) {
-  const dir = path6.resolve(demoDir);
-  const slug = path6.basename(dir);
+async function demosPush(client, demoDir, { course, log = console.log, stateless = false } = {}) {
+  const dir = path5.resolve(demoDir);
+  const slug = path5.basename(dir);
   if (!SLUG.test(slug)) {
     throw new CliError(`${slug} is not a demo slug (^[a-z0-9][a-z0-9-]{1,39}$); name the folder after the demo`);
   }
-  const manifestBytes = await readIf3(path6.join(dir, "demo.json"));
+  const manifestBytes = await readIf2(path5.join(dir, "demo.json"));
   if (!manifestBytes) throw new CliError(`no demo.json in ${dir}`, 2);
   let manifest;
   try {
@@ -18410,8 +18253,8 @@ async function demosPush(client, demoDir, { course, log = console.log } = {}) {
   } catch (err) {
     throw new CliError(`demo.json is not JSON: ${err.message}`);
   }
-  const courseDir = path6.resolve(dir, "..", "..");
-  const state = await readState(courseDir);
+  const courseDir = path5.resolve(dir, "..", "..");
+  const state = stateless ? null : await readState(courseDir);
   const known = state?.demos?.[slug] ?? {};
   const etags = { ...known };
   const sent = [];
@@ -18421,7 +18264,7 @@ async function demosPush(client, demoDir, { course, log = console.log } = {}) {
   etags["demo.json"] = saved.headers.get("etag") ?? saved.json?.etag ?? null;
   sent.push("demo.json");
   for (const file of FILES.slice(1)) {
-    const bytes = await readIf3(path6.join(dir, file.name));
+    const bytes = await readIf2(path5.join(dir, file.name));
     if (!bytes) {
       log(`  ! ${file.name}: not in ${dir}`);
       continue;
@@ -18444,17 +18287,21 @@ async function demosPush(client, demoDir, { course, log = console.log } = {}) {
     etags[file.name] = res.json?.etag ?? null;
     sent.push(`${file.name} (${bytes.length} B)`);
   }
-  await writeState(courseDir, {
-    ...state ?? {},
-    course,
-    api: client.origin,
-    demos: { ...state?.demos ?? {}, [slug]: etags }
-  });
+  if (!stateless) {
+    await writeState(courseDir, {
+      ...state ?? {},
+      course,
+      api: client.origin,
+      demos: { ...state?.demos ?? {}, [slug]: etags }
+    });
+  }
   log(`pushed ${course}/${slug}: ${sent.join(", ")}`);
   return { course, slug, etags, sent };
 }
 
 // studio/cli/src/pull.js
+import fs6 from "node:fs/promises";
+import path6 from "node:path";
 var REPO_PLATFORM_BASE = "../../../..";
 var REPO_DEMOS_BASE = "../../demos";
 function wiredSlugs(manifest) {
@@ -18483,8 +18330,8 @@ function referencedAssets(...texts) {
   return { figures: [...found2.figures].sort(), data: [...found2.data].sort() };
 }
 async function writeFile2(file, body) {
-  await fs7.mkdir(path7.dirname(file), { recursive: true });
-  await fs7.writeFile(file, body);
+  await fs6.mkdir(path6.dirname(file), { recursive: true });
+  await fs6.writeFile(file, body);
 }
 async function pullLecture(client, lectureDir, {
   course,
@@ -18496,8 +18343,8 @@ async function pullLecture(client, lectureDir, {
   log = console.log
 } = {}) {
   await useNodeDom();
-  const dir = path7.resolve(lectureDir);
-  const id = lecture ?? path7.basename(dir);
+  const dir = path6.resolve(lectureDir);
+  const id = lecture ?? path6.basename(dir);
   const c = course;
   const got = await client.call("GET", `/courses/${c}/lectures/${id}`);
   if (got.status === 404) throw new CliError(`no lecture ${c}/${id} on ${client.origin}`, 2);
@@ -18513,7 +18360,7 @@ async function pullLecture(client, lectureDir, {
     demosBase,
     mode: "notes"
   });
-  await writeFile2(path7.join(dir, "notes.html"), notesHtml);
+  await writeFile2(path6.join(dir, "notes.html"), notesHtml);
   written.push("notes.html");
   if (lec.slides) {
     const slidesHtml = shell({
@@ -18524,10 +18371,10 @@ async function pullLecture(client, lectureDir, {
       demosBase,
       mode: "slides"
     });
-    await writeFile2(path7.join(dir, "slides.html"), slidesHtml);
+    await writeFile2(path6.join(dir, "slides.html"), slidesHtml);
     written.push("slides.html");
   }
-  await writeFile2(path7.join(dir, "lecture.json"), `${JSON.stringify(manifest, null, 2)}
+  await writeFile2(path6.join(dir, "lecture.json"), `${JSON.stringify(manifest, null, 2)}
 `);
   written.push("lecture.json");
   const assets = referencedAssets(lec.notes?.body, lec.slides?.body, JSON.stringify(manifest));
@@ -18538,7 +18385,7 @@ async function pullLecture(client, lectureDir, {
         log(`  ! ${sub}/${name}: ${res.status}`);
         continue;
       }
-      await writeFile2(path7.join(dir, sub, name), res.bytes);
+      await writeFile2(path6.join(dir, sub, name), res.bytes);
       written.push(`${sub}/${name}`);
     }
   }
@@ -18582,9 +18429,136 @@ async function writeAuthorNotes(dir, thread, fragment, manifest = {}) {
     kind: "notes",
     title: manifest.title ? `author notes · ${manifest.title}` : "author notes"
   });
-  await writeFile2(path7.join(dir, "author-notes.md"), md);
+  await writeFile2(path6.join(dir, "author-notes.md"), md);
   await writeThread(dir, thread);
   return md;
+}
+
+// studio/cli/src/import.js
+var courseSeed = (id, title) => ({
+  id,
+  title: title || id,
+  theme: { base: "aegean", overrides: {} },
+  lectures: []
+});
+var UPLOAD_TYPES = {
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".json": "application/json"
+};
+function courseIdFor(lectureDir) {
+  const parts = path7.resolve(lectureDir).split(path7.sep);
+  const i = parts.lastIndexOf("courses");
+  if (i < 0 || !parts[i + 1]) return null;
+  return parts[i + 1].split("-")[0];
+}
+function mergeManifests(notes, slides) {
+  const out = { ...notes };
+  delete out.kind;
+  if (slides) {
+    out.slidesTitle = slides.docTitle ?? slides.title ?? null;
+    out.slideDemos = slides.demos ?? {};
+  }
+  return out;
+}
+async function readIf3(file) {
+  try {
+    return await fs7.readFile(file, "utf8");
+  } catch {
+    return null;
+  }
+}
+async function listFiles(dir) {
+  try {
+    const names = await fs7.readdir(dir, { withFileTypes: true });
+    return names.filter((d) => d.isFile()).map((d) => d.name);
+  } catch {
+    return [];
+  }
+}
+async function importLecture(client, lectureDir, { course, author, title, log = console.log } = {}) {
+  await useNodeDom();
+  const dir = path7.resolve(lectureDir);
+  const id = path7.basename(dir);
+  const c = course ?? courseIdFor(dir);
+  if (!c) {
+    throw new Error(
+      `which course is ${dir} part of? it is not under a \`courses/<id>/\` path, so say so:
+  studio import ${lectureDir} --course <id>`
+    );
+  }
+  const notesHtml = await readIf3(path7.join(dir, "notes.html"));
+  if (!notesHtml) throw new Error(`no notes.html in ${dir}`);
+  const slidesHtml = await readIf3(path7.join(dir, "slides.html"));
+  const notes = split(notesHtml, { kind: "notes", id });
+  const slides = slidesHtml ? split(slidesHtml, { kind: "slides", id }) : null;
+  const manifest = mergeManifests(notes.manifest, slides?.manifest);
+  const have = await client.call("GET", `/courses/${c}`);
+  if (have.status === 404) {
+    const { lectures: _none, ...seed } = courseSeed(c, title);
+    const made = await client.call("POST", "/courses", { body: seed });
+    if (made.status === 403) {
+      throw new Error(
+        `could not create course ${c} (${made.json?.error ?? made.status}): opening a course needs a signed-in author — run \`studio login\` rather than importing with a token, or import into a course that exists`
+      );
+    }
+    if (made.status >= 300) throw new Error(`could not create course ${c}: ${made.status} ${made.text}`);
+    log(`created course ${c} (you are its author)`);
+    if (author) await grantAuthor(client, c, author, log);
+  } else if (have.status >= 300) {
+    throw new Error(`GET /courses/${c}: ${have.status} ${have.text}`);
+  } else if (author) {
+    log(`  course ${c} already exists; --author ${author} not applied (use \`studio access grant\`)`);
+  }
+  const put = await client.call("PUT", `/courses/${c}/lectures/${id}`, {
+    body: { manifest, notes: notes.fragment, slides: slides?.fragment }
+  });
+  if (put.status >= 300) throw new Error(`import ${id}: ${put.status} ${put.text}`);
+  log(`imported ${c}/${id}: notes ${put.json.notes.idsAssigned} ids` + (put.json.slides ? `, slides ${put.json.slides.idsAssigned} ids` : ""));
+  const { pushed } = await pushGuides(client, c, courseDirFor(dir), {}, { log });
+  for (const name of pushed) log(`  pushed ${name}`);
+  for (const sub of ["figures", "data"]) {
+    for (const name of await listFiles(path7.join(dir, sub))) {
+      const type = UPLOAD_TYPES[path7.extname(name).toLowerCase()];
+      if (!type) {
+        log(`  skip ${sub}/${name} (type not allowed)`);
+        continue;
+      }
+      const bytes = await fs7.readFile(path7.join(dir, sub, name));
+      const pre = await client.call("POST", `/courses/${c}/lectures/${id}/uploads`, {
+        body: { name, type, size: bytes.length, dir: sub }
+      });
+      if (pre.status >= 300) throw new Error(`presign ${sub}/${name}: ${pre.status} ${pre.text}`);
+      const up = await client.upload(pre.json, bytes, type);
+      if (up.status >= 300) throw new Error(`upload ${sub}/${name}: ${up.status} ${up.text}`);
+      log(`  uploaded ${sub}/${name} (${bytes.length} B)`);
+    }
+  }
+  const courseDir = courseDirFor(dir);
+  const demosDir = courseDir ? demosDirFor(courseDir) : null;
+  for (const slug of demosDir ? wiredSlugs(manifest) : []) {
+    const demoDir = path7.join(demosDir, slug);
+    try {
+      await fs7.access(path7.join(demoDir, "demo.json"));
+    } catch {
+      log(`  skip demo ${slug} (no ${path7.relative(dir, demoDir)}/demo.json)`);
+      continue;
+    }
+    await demosPush(client, demoDir, { course: c, stateless: true, log: (line) => log(`  ${line}`) });
+  }
+  return { course: c, id, manifest };
+}
+async function grantAuthor(client, course, email, log) {
+  const current = await client.call("GET", `/access/${encodeURIComponent(email)}`);
+  if (current.status >= 300 && current.status !== 404) {
+    throw new Error(`could not read ${email}'s access record: ${current.status} ${current.text}`);
+  }
+  const roles = { ...current.json?.roles ?? {}, [course]: "author" };
+  const put = await client.call("PUT", `/access/${encodeURIComponent(email)}`, { body: { roles } });
+  if (put.status >= 300) throw new Error(`could not grant ${email} on ${course}: ${put.status} ${put.text}`);
+  log(`granted ${email} author on ${course}`);
 }
 
 // studio/cli/src/pull-course.js
