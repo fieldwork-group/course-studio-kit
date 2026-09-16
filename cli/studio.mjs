@@ -18369,7 +18369,7 @@ async function pullDemo(client, { course, slug, dir, log = console.log }) {
   }
   return { slug, etags, written };
 }
-async function demosPull(client, courseDir, { course, only = null, log = console.log } = {}) {
+async function demosPull(client, courseDir, { course, only = null, announce = true, log = console.log } = {}) {
   const dir = demosDirFor(courseDir);
   const list = await client.call("GET", `/courses/${course}/demos`);
   const demos = expectOk(list, `GET ${course}/demos`).demos ?? [];
@@ -18390,8 +18390,10 @@ async function demosPull(client, courseDir, { course, only = null, log = console
     demos: { ...state?.demos ?? {}, ...etags },
     demosPulledAt: (/* @__PURE__ */ new Date()).toISOString()
   });
-  log(`pulled ${written.length} file(s) of ${wanted.length} demo(s) → ${dir}`);
-  for (const f of written) log(`  demos/${f}`);
+  if (announce) {
+    log(`pulled ${written.length} file(s) of ${wanted.length} demo(s) → ${dir}`);
+    for (const f of written) log(`  demos/${f}`);
+  }
   return { dir, course, demos: wanted.map((d) => d.slug), written, etags };
 }
 async function demosPush(client, demoDir, { course, log = console.log } = {}) {
@@ -18599,14 +18601,17 @@ async function pullCourse(client, { course, into = ".", log = console.log } = {}
   const guides = await pullGuides(client, course, courseDir, { log });
   for (const f of guides.written) log(`  ${f}`);
   if (guides.same.length) log(`  (${guides.same.length} guide(s) unchanged)`);
-  const demos = await demosPull(client, courseDir, { course, log });
+  const demos = await demosPull(client, courseDir, { course, announce: false, log });
+  for (const f of demos.written) log(`  demos/${f}`);
   const pulled = [];
   for (const row of lectures) {
     const dir = path8.join(courseDir, "lectures", row.id);
     await pullLecture(client, dir, {
+      // The guides were written a moment ago; the lecture wants their ETags in
+      // its state, not their names on the screen a second time.
       course,
       lecture: row.id,
-      guides,
+      guides: { ...guides, written: [], same: [] },
       demos: false,
       log
     });
@@ -18956,10 +18961,11 @@ ${hint}`);
   const ignorePath = path9.join(root, ".gitignore");
   const ignore = withIgnores(await fs8.readFile(ignorePath, "utf8").catch(() => null));
   if (ignore.added.length) await fs8.writeFile(ignorePath, ignore.text, "utf8");
+  const row = (name, said) => log(`  ${name.padEnd(20)}${said}`);
   log(`${root} is set up for ${describeIdentity(me)}`);
-  log(`  ${ENV_FILE2}                ${ENV_KEY}, mode 600 — not printed here, not committed`);
-  log(`  ${CONFIG_FILE}  ${client.origin}, and the courses this token may touch`);
-  log(`  .gitignore          ${ignore.added.length ? `${ignore.added.join(", ")} added` : "already ignores them"}`);
+  row(ENV_FILE2, `${ENV_KEY}, mode 600 — not printed here, not committed`);
+  row(CONFIG_FILE, `${client.origin}, and the courses this token may touch`);
+  row(".gitignore", ignore.added.length ? `${ignore.added.join(", ")} added` : "already ignores them");
   log("");
   log(courses.length ? `courses: ${courses.join(", ")}` : "courses: every course you can see (this token is not bound to one)");
   log("");
