@@ -167,6 +167,17 @@ GET  /courses/{c}/lectures/{l}/publish/{job}         poll: copying → rendering
 The pages are already live when the `202` arrives; what is still running is the
 PDF. A failed print is a failed job, not a failed publish.
 
+**A course with no reader password cannot be published**: `409
+reader_password_required`, before anything is copied. Students open a published
+course with the **course id** as the user name and a password its author sets
+once, and the edge admits a course only when that password is on it — so
+publishing without one would put a lecture on the site that every student gets
+a 404 for. It is one action by the course's author, from a signed-in session:
+the Readers panel on the course page in the studio, or `studio reader set <c>`
+at a shell. There is no route and no tool for you to do it with — a held
+credential must not be able to change the door students walk through. If you
+meet the 409, say so and ask; do not retry.
+
 ## Block ids
 
 Every block in a stored fragment carries `data-id="…"`, ten characters of
@@ -212,7 +223,7 @@ a document, not a picture, so scripts, event handlers and external references
 come out of it.
 
 **If you cannot make the figure**, do not describe it in prose and move on. Put
-a request block where it belongs and say what it should show:
+a pending block where it belongs and say what it should show:
 
 ```html
 <figure class="fig pending">
@@ -220,8 +231,9 @@ a request block where it belongs and say what it should show:
 </figure>
 ```
 
-The theme labels it — "in preparation" to a student, a promise of tonight's run
-inside the studio — and a nightly session picks it up.
+The theme labels it "in preparation" to a student, and the brief stays on the
+page as the description of what is missing — so whoever comes back to it, you
+or the author, knows what to draw.
 
 ## Wiring a demo
 
@@ -277,8 +289,10 @@ are unsure about, quote the sentence, and say what you would do.
 | `unsafe_markup` (422) | the fragment carried markup the schema would not emit; nothing was written |
 | `invalid_manifest` (400) | the manifest failed its schema; `path` is the JSON Pointer of the offending key |
 | `locked` (409) | someone has the lecture open. A courtesy, not a mutex — `If-Match` is what actually protects the save |
+| `reader_password_required` (409) | the course has no reader password, so a publish would be invisible to students. Its author sets one; you cannot |
+| `session_required` (403) | a route a held credential may not call at all — `/tokens`, `/access`, `POST /courses`, the reader password |
 | `forbidden` (403) | a `viewers` session tried to write, or the thing belongs to someone else |
-| `too_large` | over the cap: 5 MB a figure, 25 MB a request attachment, 256 KB a guide |
+| `too_large` | over the cap: 5 MB a figure, 256 KB a guide |
 
 Every error is `{ error, message, … }`. `error` is stable and worth branching
 on; `message` is a sentence for a person.

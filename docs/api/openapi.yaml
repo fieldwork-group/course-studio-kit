@@ -26,8 +26,8 @@ info:
   description: |
     One handler over a versioned object store. Everything a lecture is — the
     notes fragment, the deck fragment, the manifest, the figures, the author
-    notes thread, the requests — is read and written here, by the studio SPA,
-    by the `studio` CLI, and by an agent holding a token.
+    notes thread — is read and written here, by the studio SPA, by the
+    `studio` CLI, and by an agent holding a token.
 
     Three things govern every call:
 
@@ -71,8 +71,6 @@ tags:
     description: Draft to student-visible page.
   - name: threads
     description: Author notes on a block.
-  - name: tasks
-    description: High-effort requests and their attachments.
   - name: dev
     description: The local stand-ins for presigned S3 URLs. Not deployed.
   - name: public
@@ -293,6 +291,14 @@ paths:
                   lectures:
                     type: array
                     items: { $ref: '#/components/schemas/LectureSummary' }
+                  reader:
+                    type: object
+                    description: |
+                      Whether this course has a reader password, and nothing
+                      more — the password itself is `GET …/reader-password`,
+                      which a `viewer` is refused.
+                    properties:
+                      set: { type: [string, 'null'], format: date-time }
                   guides:
                     type: array
                     items: { $ref: '#/components/schemas/GuideEntry' }
@@ -480,6 +486,110 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/css' }
         '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/reader-password:
+    parameters:
+      - $ref: '#/components/parameters/course'
+    get:
+      tags: [courses]
+      operationId: getReaderPassword
+      summary: The course's reader password, in clear, for an author of the course.
+      description: |
+        The one credential a student types to open this course's published
+        notes. The user name is **the course id**, fixed, so a class is told
+        two things and neither has to be explained twice.
+
+        It is stored in clear on purpose: the edge holds only a digest, and the
+        lecturer at the podium being asked "what was the password" is the real
+        case. A class credential is a secret from the log, not from its owner —
+        it appears in no event, no log line and no URL. **An author of the
+        course only**: an administrator too, a `viewer` gets `403
+        course_read_only`, and a token or a connector gets `403
+        session_required`.
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReaderPassword' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404':
+          description: No reader password is set for this course.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    put:
+      tags: [courses]
+      operationId: putReaderPassword
+      summary: Set the course's reader password. Its author, from a session.
+      description: |
+        Writes the digest the edge compares against and the record above, in
+        that order — a record that says a password is set while the edge still
+        refuses everybody would be a lie the studio then repeats. The write
+        lands at the edge in seconds and nothing is deployed.
+
+        **8 to 64 characters, printable ASCII, no colon.** Printable ASCII
+        because HTTP Basic Auth has no encoding browsers agree on for anything
+        else; no colon because Basic Auth joins the user name and the password
+        with one. Anything else is `400 invalid_password` saying which rule.
+
+        **A session only.** A token or a connector gets `403 session_required`:
+        a held credential must not be able to change the door students walk
+        through. Event `reader.set`, carrying not one character of it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, minLength: 8, maxLength: 64 }
+      responses:
+        '200':
+          description: Set.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { type: string, description: the course id }
+                  set: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '502':
+          description: |
+            The edge's credential store refused the write, so nothing was
+            written here either — `reader_store_unavailable`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      tags: [courses]
+      operationId: deleteReaderPassword
+      summary: Clear it. The published course is a 404 at the edge again.
+      description: |
+        Removes the digest and then the record. Publishing is refused with
+        `409 reader_password_required` until a new one is set. Event
+        `reader.clear`.
+      responses:
+        '200':
+          description: Cleared.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { type: string }
+                  set: { type: ['null'] }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '502':
+          description: The edge's credential store refused the delete; nothing was removed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /courses/{c}/lectures/{l}/theme.css:
     parameters:
@@ -903,6 +1013,13 @@ paths:
         running is the PDF, and **a failed print is a failed job, not a failed
         publish**: the pages are live either way and the job record says so.
 
+        **A course with no reader password is refused**, `409
+        reader_password_required`, before a single key is copied: the edge
+        admits a course prefix only when its credential is in the store, so
+        publishing without one would put a lecture on the CDN that every
+        student gets a 404 for. Set one first — `PUT
+        /courses/{c}/reader-password`, or the Readers panel on the course page.
+
         Events `publish.start`, then `publish.done` or `publish.failed`.
       responses:
         '202':
@@ -919,6 +1036,13 @@ paths:
                   published: { $ref: '#/components/schemas/Published' }
         '403': { $ref: '#/components/responses/forbidden' }
         '404': { $ref: '#/components/responses/notFound' }
+        '409':
+          description: |
+            `reader_password_required` — the course has no reader password, so
+            nothing was copied. `course` names it.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /courses/{c}/lectures/{l}/publish/{job}:
     parameters:
@@ -1084,201 +1208,6 @@ paths:
         '204':
           description: Released, or there was nothing to release.
         '403': { $ref: '#/components/responses/forbidden' }
-
-  /courses/{c}/tasks:
-    parameters:
-      - $ref: '#/components/parameters/course'
-    get:
-      tags: [tasks]
-      operationId: listTasks
-      summary: Every high-effort request, newest first, whole.
-      description: |
-        A task is what was asked for that has no lecture yet — a brief plus the
-        reference material for it. The whole document travels every time: it is
-        a few kilobytes and everything that reads one reads all of it.
-      responses:
-        '200':
-          description: The requests.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  tasks:
-                    type: array
-                    items: { $ref: '#/components/schemas/Task' }
-    post:
-      tags: [tasks]
-      operationId: addTask
-      summary: File a request.
-      description: 'Event `task.add`.'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [kind, title, brief]
-              properties:
-                kind: { type: string, enum: [lecture-from-notes, figures, demo, other] }
-                title: { type: string }
-                brief: { type: string, description: markdown }
-                lecture: { type: string }
-                number: { type: integer }
-      responses:
-        '201':
-          description: Filed.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  task: { $ref: '#/components/schemas/Task' }
-        '400': { $ref: '#/components/responses/badRequest' }
-        '403': { $ref: '#/components/responses/forbidden' }
-
-  /courses/{c}/tasks/{id}:
-    parameters:
-      - $ref: '#/components/parameters/course'
-      - $ref: '#/components/parameters/taskId'
-    get:
-      tags: [tasks]
-      operationId: getTask
-      summary: 'One request: the brief, the files, the log and the result.'
-      responses:
-        '200':
-          description: The request.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  task: { $ref: '#/components/schemas/Task' }
-        '400': { $ref: '#/components/responses/badRequest' }
-        '404': { $ref: '#/components/responses/notFound' }
-    patch:
-      tags: [tasks]
-      operationId: patchTask
-      summary: Move a request, comment on it, or record its result.
-      description: |
-        Any of `status`, `comment`, `result`, `title` and `brief` in one call:
-        one write, one event naming what changed. While a request is still
-        `requested` its author may edit the title and the brief; once a run has
-        picked it up that is refused (`task_started`) and a comment is what is
-        left. Event `task.update`.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                status: { type: string, enum: [requested, in-progress, done, declined] }
-                comment: { type: string }
-                result:
-                  type: object
-                  properties:
-                    lecture: { type: string }
-                    note: { type: string }
-                title: { type: string }
-                brief: { type: string }
-      responses:
-        '200':
-          description: Changed.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  task: { $ref: '#/components/schemas/Task' }
-        '400': { $ref: '#/components/responses/badRequest' }
-        '403': { $ref: '#/components/responses/forbidden' }
-        '404': { $ref: '#/components/responses/notFound' }
-        '409': { $ref: '#/components/responses/busy' }
-    delete:
-      tags: [tasks]
-      operationId: deleteTask
-      summary: Withdraw a request. The requester's, and only while it is `requested`.
-      description: 'Event `task.delete`.'
-      responses:
-        '200':
-          description: Withdrawn.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  deleted: { type: string }
-                  files: { type: integer }
-        '403': { $ref: '#/components/responses/forbidden' }
-        '404': { $ref: '#/components/responses/notFound' }
-        '409': { $ref: '#/components/responses/busy' }
-
-  /courses/{c}/tasks/{id}/uploads:
-    parameters:
-      - $ref: '#/components/parameters/course'
-      - $ref: '#/components/parameters/taskId'
-    post:
-      tags: [tasks]
-      operationId: presignTaskUpload
-      summary: A presigned target for a request's reference material.
-      description: |
-        The same two-step as a figure, with its own allow-list and its own cap:
-        PDF, PNG, JPEG, TXT and MD at **25 MB**, because the thing being
-        uploaded is a scanned chapter and not a picture the schema will render.
-        The file is declared on the task here, at the presign; an upload that
-        never finishes is a file in the list that downloads as a `404`, which is
-        visible and fixable. Event `task.file`.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name, type, size]
-              properties:
-                name: { type: string }
-                type:
-                  type: string
-                  enum: [application/pdf, image/png, image/jpeg, text/plain, text/markdown]
-                size: { type: integer }
-      responses:
-        '200':
-          description: Where to post the bytes.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/PresignedPost' }
-        '400': { $ref: '#/components/responses/badRequest' }
-        '403': { $ref: '#/components/responses/forbidden' }
-        '409': { $ref: '#/components/responses/busy' }
-
-  /courses/{c}/tasks/{id}/files/{name}:
-    parameters:
-      - $ref: '#/components/parameters/course'
-      - $ref: '#/components/parameters/taskId'
-      - $ref: '#/components/parameters/assetName'
-    get:
-      tags: [tasks]
-      operationId: getTaskFile
-      summary: A presigned URL for one attachment, good for fifteen minutes.
-      description: |
-        The bytes never pass through the API: a Lambda response is capped at
-        6 MB and an attachment at 25. The URL serves the file as an attachment
-        with no session. `404` if the declared upload never landed.
-      responses:
-        '200':
-          description: Where to fetch it.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  name: { type: string }
-                  type: { type: string }
-                  url: { type: string, format: uri }
-                  expires: { type: string, format: date-time }
-        '400': { $ref: '#/components/responses/badRequest' }
-        '404': { $ref: '#/components/responses/notFound' }
 
   /events:
     get:
@@ -1942,12 +1871,6 @@ components:
       in: path
       required: true
       schema: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$' }
-    taskId:
-      name: id
-      in: path
-      required: true
-      description: the ULID the task was created with
-      schema: { type: string }
     ifMatch:
       name: If-Match
       in: header
@@ -2045,6 +1968,18 @@ components:
           schema: { type: string }
 
   schemas:
+    ReaderPassword:
+      type: object
+      description: |
+        A course's reader credential as its author reads it back. The user name
+        is the course id; the password is the one a student types at the edge's
+        prompt.
+      required: [user, password, set]
+      properties:
+        user: { type: string, description: the course id, fixed }
+        password: { type: string }
+        set: { type: string, format: date-time }
+        by: { type: [string, 'null'], description: who set it }
     StoredAsset:
       type: object
       description: What a direct `PUT` of a figure or a data file answers with.
@@ -2135,8 +2070,7 @@ components:
         Codes in use: `unauthenticated`, `forbidden`, `not_found`, `no_route`,
         `method_not_allowed`, `invalid_id`, `invalid_key`, `invalid_json`,
         `empty_body`, `if_match_required`, `precondition`, `locked`,
-        `not_lock_holder`, `thread_busy`, `task_busy`, `task_started`,
-        `task_closed`, `not_requester`, `invalid_name`, `invalid_type`,
+        `not_lock_holder`, `thread_busy`, `invalid_name`, `invalid_type`,
         `extension_mismatch`, `wrong_folder`, `too_large`, `invalid_mode`,
         `invalid_job`, `invalid_guide`, `invalid_manifest`, `invalid_course`,
         `invalid_theme`, `invalid_preset`, `invalid_token`, `invalid_colour`,
@@ -2357,43 +2291,6 @@ components:
           items: { $ref: '#/components/schemas/Note' }
         etag: { type: string }
 
-    Task:
-      type: object
-      properties:
-        id: { type: string }
-        kind: { type: string, enum: [lecture-from-notes, figures, demo, other] }
-        title: { type: string }
-        brief: { type: string }
-        lecture: { type: [string, 'null'] }
-        number: { type: [integer, 'null'] }
-        author: { type: string }
-        created: { type: string, format: date-time }
-        updated: { type: string, format: date-time }
-        status: { type: string, enum: [requested, in-progress, done, declined] }
-        files:
-          type: array
-          items:
-            type: object
-            properties:
-              name: { type: string }
-              type: { type: string }
-              size: { type: integer }
-              uploaded: { type: string, format: date-time }
-              actor: { type: string }
-        log:
-          type: array
-          items:
-            type: object
-            properties:
-              ts: { type: string, format: date-time }
-              actor: { type: string }
-              text: { type: string }
-        result:
-          type: [object, 'null']
-          properties:
-            lecture: { type: [string, 'null'] }
-            note: { type: [string, 'null'] }
-
     Theme:
       type: object
       description: |
@@ -2442,7 +2339,8 @@ components:
         `theme.save`, `guide.save`, `publish.start`, `publish.done`,
         `publish.failed`, `restore`, `note.add`, `note.reply`, `note.resolve`,
         `note.reopen`, `note.delete`, `lock.acquire`, `lock.release`, `import`,
-        `task.add`, `task.update`, `task.file`, `task.delete`.
+        `access.grant`, `access.revoke`, `token.create`, `token.revoke`,
+        `demo.save`, `demo.file`, `demo.delete`.
       properties:
         ts: { type: string, format: date-time }
         actor: { type: [string, 'null'] }
