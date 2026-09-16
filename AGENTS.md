@@ -1,10 +1,67 @@
-<!-- A copy of docs/api/agent-guide.md, refreshed from the studio. Edits here are overwritten; file an issue instead. -->
+<!-- Generated from docs/api/coding-session.md and docs/api/agent-guide.md in the studio. Edits here are overwritten; file an issue instead. -->
 
-> **Read this first if you are an agent.** It is the same text the studio
-> serves as the `studio://guide` resource, copied here so you can read it before
-> you connect. The other half of the kit is the demo format your figures must
-> meet: [`docs/demos/format.md`](docs/demos/format.md), built with
-> [`docs/demos/authoring.md`](docs/demos/authoring.md).
+> **Read this first if you are an agent.** Below the four steps is the same text
+> the studio serves as the `studio://guide` resource, copied here so you can read
+> it before you connect. The other half of the kit is the demo format your
+> figures must meet: [`docs/demos/format.md`](docs/demos/format.md), built with
+> [`docs/demos/authoring.md`](docs/demos/authoring.md), and the command you drive
+> it all with is [`cli/README.md`](cli/README.md).
+
+# Work with an AI coding agent
+
+*The four steps that put a course on your own machine and hand it to a coding
+agent, and the prompt that starts the session.*
+
+A **token** is the way in, because you can mint one yourself: the studio's
+*API access* panel makes one in a click, scopes it to one course, and revokes
+it in another. (The Claude connector is the other way in and needs a client id
+and secret from an administrator — Cognito has no dynamic client registration —
+so it is the second door, not the first.)
+
+1. **Make a folder** for your course on your machine. Empty is fine.
+2. **Get a token.** In the studio: account menu → *API access* → *New token*,
+   scoped to your course. It is shown once.
+3. **Set the folder up:**
+
+   ```bash
+   npx --package github:fieldwork-group/course-studio-kit studio init
+   ```
+
+   (or clone the kit beside the folder and run
+   `node ../course-studio-kit/cli/studio.mjs init`). Paste the token when it
+   asks — it is never a flag, so it does not land in your shell history. It is
+   written to a local `.env` that the folder ignores; nothing else holds it.
+4. **Start a coding session in the folder** — Claude Code, or any agent with a
+   shell — and give it the starting prompt below.
+
+## The starting prompt
+
+Paste this as the first message of the session:
+
+> This folder is a course in the Fieldwork Course Studio. Read `AGENTS.md` from
+> the kit first (`studio kit-path` prints where it is, or it is in
+> `../course-studio-kit/`). The API token is in `.env` as `STUDIO_TOKEN`; the
+> `studio` command reads it. Start with `studio status` and
+> `studio pull <course>`, edit the files on disk, check your work as the kit
+> describes, and `studio push` when I say so. Never publish, never print the
+> token, and never commit `.env`.
+
+## What the agent has
+
+Everything in the kit, and the `studio` command:
+
+| | |
+|---|---|
+| `studio status` | who the token says you are, and every lecture's state |
+| `studio pull <course>` | the whole course into `courses/<id>/`, in this layout |
+| `studio push [<dir>]` | one lecture back, with the ETags the pull recorded |
+| `studio notes …` | the author-notes thread — where an agent asks rather than guesses |
+| `studio demos …` | the course's demos, three files each |
+| `studio kit-path` | where `AGENTS.md` and the demo format are on this machine |
+
+`studio publish` exists and is deliberately not in the prompt: publishing is
+the author's call, and the prompt says so out loud because an agent that reads
+a command table will otherwise find it.
 
 # Writing a course through the API
 
@@ -55,13 +112,31 @@ refusal, not a cleanup: your content did not land.
 
 ## Two ways in
 
-**As a connector, with no token at all.** The studio runs an MCP server at
+**With a token, in a folder — the first way.** `cst_…`, minted by the author in
+the studio's *API access* panel, sent as `Authorization: Bearer`. It is the way
+in that needs nobody's permission but the author's: they make it in a click,
+scope it to one course, and revoke it in another. On a machine it lives in a
+`.env` the folder ignores, written by `studio init` from the public kit, and
+the `studio` command reads it from there — `AGENTS.md` in the kit has the four
+steps and the prompt that starts the session, and `cli/README.md` beside it has
+the commands. This is the way for a coding session, for a script and for CI.
+The routes are below and the CLI is a thin client over them.
+
+**As a connector, in a chat — the second way.** The studio runs an MCP server at
 `https://studio.fieldwork-group.com/api/mcp`. Add that URL as a custom
-connector, sign in with your studio email and password, and the tools below
-become available in the conversation. Nothing is installed and no credential
-ends up on your machine — Claude keeps the tokens and the model never sees
-them. This is the way for Claude Desktop, claude.ai, mobile and Cowork, and it
-is the way for Claude Code too.
+connector, sign in with your studio account, and the tools below become
+available in the conversation. Nothing is installed and no credential ends up on
+your machine — Claude keeps the tokens and the model never sees them. It is
+second rather than first for one reason: **the client id and secret come from a
+studio administrator**, because Cognito has no dynamic client registration, so
+somebody has to hand them to you before you start.
+
+What a chat can do through it is the whole edit loop — read a lecture, change a
+fragment, upload a figure, leave a note, preview, publish. What it cannot do is
+the part of a demo that is not text: it can write a single self-contained
+`demo.html` and save it, but it cannot build one from the kit's modular source,
+run the lint that mounts it in a browser with no network, look at it running, or
+render its still image. Those want a shell, which is the first way in.
 
 - **Claude Desktop · claude.ai · mobile · Cowork** — *Settings → Connectors →
   Add custom connector*, paste the URL, open *Advanced settings* and enter the
@@ -89,10 +164,6 @@ Read the resources `studio://guide` (this file) and `studio://vocabulary`
 before your first write. Everything the tools do goes through the routes below,
 so the rest of this document is the contract either way — a 412 through a tool
 is the same 412, carrying the same current ETag.
-
-**As a program, with a token.** `cst_…`, minted in the studio's *API access*
-panel, sent as `Authorization: Bearer`. This is the way for a
-script, for CI and for a shell agent. The routes are below.
 
 ## The session
 
