@@ -1,7 +1,7 @@
 # The user demo format
 
 *The spec the kit publishes. Everything here is what a demo author needs and
-nothing here is about one course: the examples are generic physics, and no
+nothing here is about one course: the examples belong to no course and no
 lecture, lecturer or student URL appears.*
 
 A **demo** is one self-contained HTML file that runs inside a lecture page in a
@@ -165,7 +165,7 @@ announce on a `setTimeout(…, 0)`.
 
 ## A whole demo, end to end
 
-Generic physics, no dependencies, about forty lines:
+No dependencies, about forty lines:
 
 ```html
 <!doctype html>

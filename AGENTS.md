@@ -65,9 +65,10 @@ a command table will otherwise find it.
 
 # Writing a course through the API
 
-You are editing physics lecture notes in the Course Studio. The lectures are
-Hebrew, right-to-left, and they are read by students in a browser and printed
-as a handout. Read this before your first request. It is the part of the
+You are editing lecture notes in the Course Studio. The lectures are Hebrew,
+right-to-left, they are read by students in a browser and printed as a handout,
+and they live on typeset formulas and demos that run inside the argument. What
+the course is about is the author's; none of the rules below depend on it. Read this before your first request. It is the part of the
 studio's rules that does not depend on which course you are in; the part that
 does — the notation, the sign conventions, the one Hebrew term per concept —
 is served per course by the API, and this document tells you where.
@@ -178,10 +179,10 @@ GET /courses/{c}/guides/style        → how the prose should read
 GET /courses/{c}/guides/syllabus     → what is taught when, and what state it is in
 ```
 
-Read the guides before you write physics. They are the difference between a
-lecture that fits the course and one that has to be rewritten: which symbol
+Read the guides before you write a line of the course. They are the difference
+between a lecture that fits it and one that has to be rewritten: which symbol
 means which quantity, which sign convention the board uses, which Hebrew word
-the course has already chosen for *dispersion*.
+the course has already chosen for a term that has more than one.
 
 `groups` in `GET /me` tells you what the rest of the API will allow. `authors`
 writes; `viewers` reads everything, including drafts, and is refused every
@@ -197,6 +198,17 @@ to start a course, say that the lecturer opens it once in the studio (the
 account menu, *New course*) and you take it from there. A user may open ten
 courses unless an administrator raises their limit; deleting one is an
 administrator's, from the foot of the course page.
+
+A course opened that way can start from a **template** instead of empty —
+`{ id, title, from: 'starter' }`, offered on the same page — which fills it
+with a short tour of the studio: six lectures, four guides and four demos, in
+Hebrew, written to be read once and then edited into something else. Every new
+author gets one on their first sign-in. If a lecturer you are working with
+still has theirs, it is not content anybody is attached to: it is the fastest
+thing in the course to overwrite, and reading its `style` guide is the
+quickest way to learn how this course wants to sound. It is also the example to
+read if you have never seen a lecture in this studio — it uses every block type
+and wires a demo — and it costs nobody anything if you read it first.
 
 ## The edit loop
 
@@ -287,8 +299,8 @@ Then reference it from the fragment by the `href` you were given:
 </figure>
 ```
 
-PNG, SVG and JPEG go under `figures/`; JSON — precomputed physics a demo reads
-instead of integrating — goes under `data/`. Five megabytes each. Every SVG is
+PNG, SVG and JPEG go under `figures/`; JSON — numbers computed ahead of time
+that a demo reads instead of computing them — goes under `data/`. Five megabytes each. Every SVG is
 sanitised before it is served or published: an SVG from the site's own origin is
 a document, not a picture, so scripts, event handlers and external references
 come out of it.
@@ -338,7 +350,7 @@ it is a `400`, and the stored value is kept for you when you leave it out.
 
 ## When you are not sure
 
-Leave a note on the block instead of guessing at the physics:
+Leave a note on the block instead of guessing at the subject:
 
 ```
 POST /courses/{c}/lectures/{l}/notes-thread
@@ -372,7 +384,7 @@ on; `message` is a sentence for a person.
 
 ```
 studio_whoami                                     → actor, groups, scopes, courses
-studio_guides { course: "waves" }                 → conventions, glossary, style, syllabus
+studio_guides { course: "my-course" }             → conventions, glossary, style, syllabus
 studio_get_lecture { course, lecture, sections: "all" }
     → { manifest, manifestEtag, notes: { etag, bytes, sections, fragment }, openNotes }
 studio_save_notes { course, lecture, fragment, etag, changedBlocks: ["K7F2Q9X1M0"] }
@@ -399,13 +411,13 @@ Three things about the tools that are not obvious from the names:
 ## The whole loop, once
 
 ```
-GET /me · GET /courses · GET /courses/waves/guides/conventions
-GET /courses/waves/lectures/L02-damped-driven
+GET /me · GET /courses · GET /courses/my-course/guides/conventions
+GET /courses/my-course/lectures/L02
     → notes.etag = "9f2a…"
-PUT /courses/waves/lectures/L02-damped-driven/notes
+PUT /courses/my-course/lectures/L02/notes
     If-Match: "9f2a…"   x-changed-blocks: K7F2Q9X1M0
     → { etag: "b31c…", idsAssigned: 2 }
-GET /courses/waves/lectures/L02-damped-driven/preview?mode=notes
-POST /courses/waves/lectures/L02-damped-driven/publish   → { job: "K9QT" }
-GET /courses/waves/lectures/L02-damped-driven/publish/K9QT → { status: "done" }
+GET /courses/my-course/lectures/L02/preview?mode=notes
+POST /courses/my-course/lectures/L02/publish   → { job: "K9QT" }
+GET /courses/my-course/lectures/L02/publish/K9QT → { status: "done" }
 ```
