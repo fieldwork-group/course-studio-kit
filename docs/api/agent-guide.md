@@ -47,13 +47,31 @@ refusal, not a cleanup: your content did not land.
 
 ## Two ways in
 
-**As a connector, with no token at all.** The studio runs an MCP server at
+**With a token, in a folder — the first way.** `cst_…`, minted by the author in
+the studio's *API access* panel, sent as `Authorization: Bearer`. It is the way
+in that needs nobody's permission but the author's: they make it in a click,
+scope it to one course, and revoke it in another. On a machine it lives in a
+`.env` the folder ignores, written by `studio init` from the public kit, and
+the `studio` command reads it from there — `AGENTS.md` in the kit has the four
+steps and the prompt that starts the session, and `cli/README.md` beside it has
+the commands. This is the way for a coding session, for a script and for CI.
+The routes are below and the CLI is a thin client over them.
+
+**As a connector, in a chat — the second way.** The studio runs an MCP server at
 `https://studio.fieldwork-group.com/api/mcp`. Add that URL as a custom
-connector, sign in with your studio email and password, and the tools below
-become available in the conversation. Nothing is installed and no credential
-ends up on your machine — Claude keeps the tokens and the model never sees
-them. This is the way for Claude Desktop, claude.ai, mobile and Cowork, and it
-is the way for Claude Code too.
+connector, sign in with your studio account, and the tools below become
+available in the conversation. Nothing is installed and no credential ends up on
+your machine — Claude keeps the tokens and the model never sees them. It is
+second rather than first for one reason: **the client id and secret come from a
+studio administrator**, because Cognito has no dynamic client registration, so
+somebody has to hand them to you before you start.
+
+What a chat can do through it is the whole edit loop — read a lecture, change a
+fragment, upload a figure, leave a note, preview, publish. What it cannot do is
+the part of a demo that is not text: it can write a single self-contained
+`demo.html` and save it, but it cannot build one from the kit's modular source,
+run the lint that mounts it in a browser with no network, look at it running, or
+render its still image. Those want a shell, which is the first way in.
 
 - **Claude Desktop · claude.ai · mobile · Cowork** — *Settings → Connectors →
   Add custom connector*, paste the URL, open *Advanced settings* and enter the
@@ -81,10 +99,6 @@ Read the resources `studio://guide` (this file) and `studio://vocabulary`
 before your first write. Everything the tools do goes through the routes below,
 so the rest of this document is the contract either way — a 412 through a tool
 is the same 412, carrying the same current ETag.
-
-**As a program, with a token.** `cst_…`, minted in the studio's *API access*
-panel, sent as `Authorization: Bearer`. This is the way for a
-script, for CI and for a shell agent. The routes are below.
 
 ## The session
 
@@ -243,16 +257,16 @@ The manifest, `PUT /courses/{c}/lectures/{l}/manifest`, keyed by the selector:
 
 ```json
 { "demos": {
-    "#demo-mass-spring": { "module": "mass-spring", "export": "MassSpring",
-                           "opts": { "maxHeight": 400 } },
-    "#demo-pendulum-lab": { "kind": "file", "demo": "pendulum-lab" } } }
+    "#demo-pendulum-lab": { "kind": "file", "demo": "pendulum-lab",
+                            "aspect": 0.5, "title": "Pendulum lab" } } }
 ```
 
-The first is a **platform demo**: `module` is a name in the committed demo
-bundle, never a path, and the platform resolves the export against it. The
-second is a **course demo**: one self-contained HTML file uploaded to the
-course, run in a sandboxed frame with no network. Use a platform demo when one
-exists that shows the physics; write a course demo when none does.
+There is one kind of demo: one self-contained HTML file the course owns, run
+in a sandboxed frame with no network. `demo` is its slug — `GET
+/courses/{c}/demos` lists them — and `aspect` and `title` are copied off that
+demo's own `demo.json` so a published page needs no API to size the frame.
+`docs/demos/format.md` is the format; write a demo when the course has none
+that shows the point.
 
 `published` is not yours. The publish route writes it; a manifest body carrying
 it is a `400`, and the stored value is kept for you when you leave it out.

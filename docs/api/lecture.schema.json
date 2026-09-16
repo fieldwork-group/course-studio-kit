@@ -88,54 +88,31 @@
   "$defs": {
     "demo": {
       "type": "object",
-      "description": "either { module?, export, opts? } for a platform demo or { kind: 'file', demo } for a course demo",
+      "description": "a course demo: { kind: 'file', demo: '<slug>', aspect?, title? }",
+      "required": [
+        "kind",
+        "demo"
+      ],
       "properties": {
         "kind": {
           "const": "file",
-          "description": "present only on a course-level user demo"
-        },
-        "module": {
-          "type": "string",
-          "minLength": 1,
-          "description": "a name in the platform demo bundle, never a path"
-        },
-        "export": {
-          "type": "string",
-          "minLength": 1,
-          "description": "the class exported by that module"
+          "description": "always `file`; there is one kind of demo"
         },
         "demo": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
           "description": "the course demo's slug"
         },
-        "opts": {
-          "type": "object",
-          "description": "passed to the demo at mount; the demo decides what it means"
-        },
         "aspect": {
           "type": "number",
-          "description": "height ÷ width of a course demo, copied from its demo.json when wired (plan 04)"
+          "description": "height ÷ width, copied from the demo's demo.json when wired"
         },
         "title": {
           "type": "string",
-          "description": "a course demo's title, copied when wired so a published page needs no API"
+          "description": "the demo's title, copied when wired so a published page needs no API"
         }
       },
-      "additionalProperties": false,
-      "anyOf": [
-        {
-          "required": [
-            "export"
-          ]
-        },
-        {
-          "required": [
-            "kind",
-            "demo"
-          ]
-        }
-      ]
+      "additionalProperties": false
     },
     "demoMap": {
       "type": "object",
