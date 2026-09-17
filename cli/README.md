@@ -100,7 +100,14 @@ Two things worth knowing about the pulled files:
   The published page is rendered by the platform from what you push.
 - **`data-id` attributes are the studio's.** Keep them exactly as they are on a
   block you edit, give a new block none at all, and never copy one onto a
-  second block. Notes and history are anchored to them.
+  second block. Notes and history are anchored to them. After a push that
+  assigned ids, `push` **writes the document back** into your working copy
+  with the ids the server chose — so a block you added carries its id from
+  then on, and the next push does not send it as new again. Re-read the file
+  after a push before editing it further.
+- **A push saves only what changed.** A document whose bytes the studio
+  already holds is reported `unchanged` and not saved again; so is the
+  manifest. A push with nothing to say writes no versions and no events.
 
 ## When a push is refused
 

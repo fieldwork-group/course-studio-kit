@@ -7,7 +7,10 @@ every regeneration, and `--check` fails the build when the rest is stale.
 
 This is the list of things a lecture is allowed to be made of. It is also the
 sanitiser: whatever the schema does not know cannot reach a student's browser as
-live markup, so a `PUT` carrying anything else comes back normalised without it.
+live markup. A `PUT` carrying markup that could *run* — a `<script>`, an `on*`
+attribute on any element, a `javascript:` link — is refused with `422
+unsafe_markup` and writes nothing; an attribute the schema merely does not
+know (`class`, `title`, `align`) is dropped and the save goes through.
 Every count below is what the four committed lectures actually contain, which is
 what makes an unfamiliar class suspicious rather than merely unusual.
 

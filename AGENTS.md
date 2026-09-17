@@ -304,7 +304,11 @@ to it.
 - A **new** block: give it no `data-id` at all. The server assigns one and tells
   you how many it assigned (`idsAssigned`).
 - Never copy a `data-id` onto a second block. Two blocks with one id is a
-  document the merge cannot reason about.
+  document the merge cannot reason about, so the server does not store one:
+  the second block is treated as new and gets its own id (counted in
+  `idsAssigned`), and the first keeps the id the notes and the history point
+  at. If you duplicated a block on purpose, drop the id from the copy yourself
+  and nothing surprises you.
 
 `data-id` is the only attribute you must not author. Section anchors (`id="s4"`)
 are different: they are the lecturer's, the table of contents and every

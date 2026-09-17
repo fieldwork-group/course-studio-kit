@@ -3676,7 +3676,7 @@ var init_esm6 = __esm({
 });
 
 // studio/node_modules/linkedom/esm/shared/constants.js
-var NODE_END, ELEMENT_NODE2, ATTRIBUTE_NODE, TEXT_NODE2, CDATA_SECTION_NODE, COMMENT_NODE, DOCUMENT_NODE, DOCUMENT_TYPE_NODE, DOCUMENT_FRAGMENT_NODE, BLOCK_ELEMENTS, SHOW_ALL, SHOW_ELEMENT, SHOW_TEXT, SHOW_CDATA_SECTION, SHOW_COMMENT, DOCUMENT_POSITION_DISCONNECTED, DOCUMENT_POSITION_PRECEDING, DOCUMENT_POSITION_FOLLOWING, DOCUMENT_POSITION_CONTAINS, DOCUMENT_POSITION_CONTAINED_BY, DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC, SVG_NAMESPACE;
+var NODE_END, ELEMENT_NODE2, ATTRIBUTE_NODE, TEXT_NODE2, CDATA_SECTION_NODE, COMMENT_NODE2, DOCUMENT_NODE, DOCUMENT_TYPE_NODE, DOCUMENT_FRAGMENT_NODE, BLOCK_ELEMENTS, SHOW_ALL, SHOW_ELEMENT, SHOW_TEXT, SHOW_CDATA_SECTION, SHOW_COMMENT, DOCUMENT_POSITION_DISCONNECTED, DOCUMENT_POSITION_PRECEDING, DOCUMENT_POSITION_FOLLOWING, DOCUMENT_POSITION_CONTAINS, DOCUMENT_POSITION_CONTAINED_BY, DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC, SVG_NAMESPACE;
 var init_constants = __esm({
   "studio/node_modules/linkedom/esm/shared/constants.js"() {
     NODE_END = -1;
@@ -3684,7 +3684,7 @@ var init_constants = __esm({
     ATTRIBUTE_NODE = 2;
     TEXT_NODE2 = 3;
     CDATA_SECTION_NODE = 4;
-    COMMENT_NODE = 8;
+    COMMENT_NODE2 = 8;
     DOCUMENT_NODE = 9;
     DOCUMENT_TYPE_NODE = 10;
     DOCUMENT_FRAGMENT_NODE = 11;
@@ -4074,7 +4074,7 @@ var init_jsdon = __esm({
             attrAsJSON(next, json);
             break;
           case TEXT_NODE2:
-          case COMMENT_NODE:
+          case COMMENT_NODE2:
           case CDATA_SECTION_NODE:
             characterDataAsJSON(next, json);
             break;
@@ -4492,7 +4492,7 @@ var init_node2 = __esm({
         return CDATA_SECTION_NODE;
       }
       static get COMMENT_NODE() {
-        return COMMENT_NODE;
+        return COMMENT_NODE2;
       }
       static get DOCUMENT_NODE() {
         return DOCUMENT_NODE;
@@ -4525,7 +4525,7 @@ var init_node2 = __esm({
         return CDATA_SECTION_NODE;
       }
       get COMMENT_NODE() {
-        return COMMENT_NODE;
+        return COMMENT_NODE2;
       }
       get DOCUMENT_NODE() {
         return DOCUMENT_NODE;
@@ -4811,7 +4811,7 @@ var init_node3 = __esm({
         case NODE_END:
           return prev[START];
         case TEXT_NODE2:
-        case COMMENT_NODE:
+        case COMMENT_NODE2:
         case CDATA_SECTION_NODE:
           return prev;
       }
@@ -5036,7 +5036,7 @@ var init_comment = __esm({
     init_character_data();
     Comment3 = class _Comment extends CharacterData {
       constructor(ownerDocument, data = "") {
-        super(ownerDocument, "#comment", COMMENT_NODE, data);
+        super(ownerDocument, "#comment", COMMENT_NODE2, data);
       }
       cloneNode() {
         const { ownerDocument, [VALUE]: data } = this;
@@ -7875,7 +7875,7 @@ var init_parent_node = __esm({
             break;
           }
           case TEXT_NODE2:
-          case COMMENT_NODE:
+          case COMMENT_NODE2:
           case CDATA_SECTION_NODE:
             node.remove();
           /* eslint no-fallthrough:0 */
@@ -8829,7 +8829,7 @@ var init_element = __esm({
               break;
             }
             case TEXT_NODE2:
-            case COMMENT_NODE:
+            case COMMENT_NODE2:
             case CDATA_SECTION_NODE:
               addNext(next.cloneNode(deep));
               break;
@@ -8887,7 +8887,7 @@ var init_element = __esm({
               }
               break;
             case TEXT_NODE2:
-            case COMMENT_NODE:
+            case COMMENT_NODE2:
             case CDATA_SECTION_NODE:
               out.push((isOpened ? ">" : "") + next);
               isOpened = false;
@@ -12993,7 +12993,7 @@ var init_tree_walker = __esm({
           return mask & SHOW_ELEMENT;
         case TEXT_NODE2:
           return mask & SHOW_TEXT;
-        case COMMENT_NODE:
+        case COMMENT_NODE2:
           return mask & SHOW_COMMENT;
         case CDATA_SECTION_NODE:
           return mask & SHOW_CDATA_SECTION;
@@ -16820,6 +16820,64 @@ var VOID = /* @__PURE__ */ new Set([
   "wbr"
 ]);
 var VERBATIM = /* @__PURE__ */ new Set(["pre", "textarea"]);
+var BLOCK = /* @__PURE__ */ new Set([
+  "html",
+  "head",
+  "body",
+  "header",
+  "footer",
+  "main",
+  "nav",
+  "aside",
+  "section",
+  "article",
+  "div",
+  "p",
+  "ol",
+  "ul",
+  "li",
+  "dl",
+  "dt",
+  "dd",
+  "table",
+  "thead",
+  "tbody",
+  "tfoot",
+  "tr",
+  "td",
+  "th",
+  "caption",
+  "colgroup",
+  "col",
+  "figure",
+  "figcaption",
+  "details",
+  "summary",
+  "blockquote",
+  "pre",
+  "hr",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "script",
+  "style",
+  "link",
+  "meta",
+  "title",
+  "form",
+  "fieldset",
+  "video",
+  "audio",
+  "canvas",
+  "iframe",
+  "noscript",
+  "img"
+]);
+var WS = /[ \t\n\r\f]+/g;
+var WS_ONLY = /^[ \t\n\r\f]*$/;
 function escapeText(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -16840,6 +16898,7 @@ function attrsToString(pairs2) {
 }
 var ELEMENT_NODE = 1;
 var TEXT_NODE = 3;
+var COMMENT_NODE = 8;
 function tag(el) {
   return String(el.tagName || "").toLowerCase();
 }
@@ -16864,12 +16923,52 @@ function writeNode(node, { sortAttrs = true } = {}) {
   write(node, out, sortAttrs);
   return out.join("");
 }
+function inVerbatim(node) {
+  for (let p = node.parentNode; p; p = p.parentNode) {
+    if (p.nodeType === ELEMENT_NODE && VERBATIM.has(tag(p))) return true;
+  }
+  return false;
+}
+function isBlockElement(node) {
+  return node && node.nodeType === ELEMENT_NODE && BLOCK.has(tag(node));
+}
+function scrub(el, { stripIds }) {
+  for (const child of [...el.childNodes]) {
+    if (child.nodeType === COMMENT_NODE) child.remove();
+  }
+  for (const child of [...el.childNodes]) {
+    if (child.nodeType === TEXT_NODE && !inVerbatim(child)) {
+      child.data = String(child.data).replace(WS, " ");
+    } else if (child.nodeType === ELEMENT_NODE) {
+      scrub(child, { stripIds });
+    }
+  }
+  for (const child of [...el.childNodes]) {
+    if (child.nodeType !== TEXT_NODE || inVerbatim(child)) continue;
+    if (!WS_ONLY.test(child.data)) continue;
+    const prev = child.previousSibling, next = child.nextSibling;
+    if (!prev || !next || isBlockElement(prev) || isBlockElement(next)) child.remove();
+  }
+  const first = el.firstChild, last = el.lastChild;
+  if (first && first.nodeType === TEXT_NODE && !inVerbatim(first)) {
+    first.data = String(first.data).replace(/^[ \t\n\r\f]+/, "");
+  }
+  if (last && last.nodeType === TEXT_NODE && !inVerbatim(last)) {
+    last.data = String(last.data).replace(/[ \t\n\r\f]+$/, "");
+  }
+  if (stripIds && el.hasAttribute?.("data-id")) el.removeAttribute("data-id");
+}
+function canonicaliseNode(root, { stripIds = true } = {}) {
+  const el = root.documentElement || root;
+  scrub(el, { stripIds });
+  return writeNode(el, { sortAttrs: true });
+}
 
 // studio/schema/src/parse.js
 init_dom();
 var ELEMENT_NODE3 = 1;
 var TEXT_NODE3 = 3;
-var WS_ONLY = /^[ \t\n\r\f]*$/;
+var WS_ONLY2 = /^[ \t\n\r\f]*$/;
 var tagOf = (el) => String(el.tagName || "").toLowerCase();
 var classesOf = (el) => (el.getAttribute?.("class") || "").split(/\s+/).filter(Boolean);
 var attr = (el, name) => {
@@ -16950,8 +17049,8 @@ function parseInlineNode(node, marks2 = Mark.none, noMath = false, ctx) {
 }
 function trimInline(run) {
   let a = 0, b = run.length;
-  while (a < b && run[a].isText && WS_ONLY.test(run[a].text)) a++;
-  while (b > a && run[b - 1].isText && WS_ONLY.test(run[b - 1].text)) b--;
+  while (a < b && run[a].isText && WS_ONLY2.test(run[a].text)) a++;
+  while (b > a && run[b - 1].isText && WS_ONLY2.test(run[b - 1].text)) b--;
   const out = run.slice(a, b);
   if (!out.length) return out;
   const first = out[0], last = out[out.length - 1];
@@ -17028,7 +17127,7 @@ function rawBlock(el, ctx) {
   return schema.nodes.raw.create({ id, html });
 }
 function sectionHeading(el) {
-  const kids = [...el.childNodes].filter((n2) => n2.nodeType === ELEMENT_NODE3 || n2.nodeType === TEXT_NODE3 && !WS_ONLY.test(String(n2.data)));
+  const kids = [...el.childNodes].filter((n2) => n2.nodeType === ELEMENT_NODE3 || n2.nodeType === TEXT_NODE3 && !WS_ONLY2.test(String(n2.data)));
   if (kids.length !== 2) return null;
   const [n, t] = kids;
   if (n.nodeType !== ELEMENT_NODE3 || t.nodeType !== ELEMENT_NODE3) return null;
@@ -17078,7 +17177,7 @@ function parseBlockElement(el, ctx, noMath) {
     case "div": {
       const domId = attr(el, "id");
       const empty = ![...el.childNodes].some(
-        (n) => n.nodeType === ELEMENT_NODE3 || n.nodeType === TEXT_NODE3 && !WS_ONLY.test(String(n.data))
+        (n) => n.nodeType === ELEMENT_NODE3 || n.nodeType === TEXT_NODE3 && !WS_ONLY2.test(String(n.data))
       );
       if (domId && empty && !style) {
         return N.demoMount.create({ id: idAttr(el), mountId: domId, cls });
@@ -17183,12 +17282,12 @@ function atomToHtml(node) {
   }
 }
 var pad = (n) => " ".repeat(n);
-var WS_ONLY2 = /^[ \t\n\r\f]*$/;
+var WS_ONLY3 = /^[ \t\n\r\f]*$/;
 var isDisplayAtom = (n) => n.type.name === "mathInline" && !n.marks.length && (n.attrs.delim === "$$" || n.attrs.delim === "\\[");
 function trimSegment(nodes2) {
   let a = 0, b = nodes2.length;
-  while (a < b && nodes2[a].isText && WS_ONLY2.test(nodes2[a].text)) a++;
-  while (b > a && nodes2[b - 1].isText && WS_ONLY2.test(nodes2[b - 1].text)) b--;
+  while (a < b && nodes2[a].isText && WS_ONLY3.test(nodes2[a].text)) a++;
+  while (b > a && nodes2[b - 1].isText && WS_ONLY3.test(nodes2[b - 1].text)) b--;
   return nodes2.slice(a, b);
 }
 function looseTextHtml(node, indent) {
@@ -18021,6 +18120,9 @@ function authorNotesMarkdown(authorNotesJson, fragmentHtml = "", opts = {}) {
 
 // studio/schema/src/compare.js
 init_dom();
+function canonicaliseHtml(html, opts = {}) {
+  return canonicaliseNode(parseDocument2(html, opts), { stripIds: opts.stripIds !== false });
+}
 
 // studio/schema/src/index.js
 init_dom();
@@ -18393,6 +18495,40 @@ async function writeFile2(file, body) {
   await fs6.mkdir(path6.dirname(file), { recursive: true });
   await fs6.writeFile(file, body);
 }
+async function writeDocuments(dir, lec, courseDoc, { platformBase, demosBase, only = null }) {
+  const manifest = lec.manifest ?? {};
+  const written = [];
+  const wanted = (which) => !only || only.includes(which);
+  if (wanted("notes")) {
+    const notesHtml = shell({
+      fragment: lec.notes?.body ?? "",
+      manifest,
+      course: courseDoc,
+      platformBase,
+      demosBase,
+      mode: "notes"
+    });
+    await writeFile2(path6.join(dir, "notes.html"), notesHtml);
+    written.push("notes.html");
+  }
+  if (lec.slides && wanted("slides")) {
+    const slidesHtml = shell({
+      fragment: lec.slides.body,
+      manifest: slidesManifest(manifest),
+      course: courseDoc,
+      platformBase,
+      demosBase,
+      mode: "slides"
+    });
+    await writeFile2(path6.join(dir, "slides.html"), slidesHtml);
+    written.push("slides.html");
+  }
+  return written;
+}
+async function repoCourseDoc(client, c) {
+  const { theme, ...courseDoc } = (await client.call("GET", `/courses/${c}`)).json?.course ?? {};
+  return courseDoc;
+}
 async function pullLecture(client, lectureDir, {
   course,
   lecture,
@@ -18409,31 +18545,9 @@ async function pullLecture(client, lectureDir, {
   const got = await client.call("GET", `/courses/${c}/lectures/${id}`);
   if (got.status === 404) throw new CliError(`no lecture ${c}/${id} on ${client.origin}`, 2);
   const lec = expectOk(got, `GET ${c}/${id}`);
-  const { theme, ...courseDoc } = (await client.call("GET", `/courses/${c}`)).json?.course ?? {};
+  const courseDoc = await repoCourseDoc(client, c);
   const manifest = lec.manifest ?? {};
-  const written = [];
-  const notesHtml = shell({
-    fragment: lec.notes?.body ?? "",
-    manifest,
-    course: courseDoc,
-    platformBase,
-    demosBase,
-    mode: "notes"
-  });
-  await writeFile2(path6.join(dir, "notes.html"), notesHtml);
-  written.push("notes.html");
-  if (lec.slides) {
-    const slidesHtml = shell({
-      fragment: lec.slides.body,
-      manifest: slidesManifest(manifest),
-      course: courseDoc,
-      platformBase,
-      demosBase,
-      mode: "slides"
-    });
-    await writeFile2(path6.join(dir, "slides.html"), slidesHtml);
-    written.push("slides.html");
-  }
+  const written = await writeDocuments(dir, lec, courseDoc, { platformBase, demosBase });
   await writeFile2(path6.join(dir, "lecture.json"), `${JSON.stringify(manifest, null, 2)}
 `);
   written.push("lecture.json");
@@ -18466,6 +18580,10 @@ async function pullLecture(client, lectureDir, {
     lecture: id,
     api: client.origin,
     pulledAt: (/* @__PURE__ */ new Date()).toISOString(),
+    // How the files were shelled, so a `push` that has to write a document
+    // back (the ids the server assigned) writes it the way `pull` did.
+    platformBase,
+    demosBase,
     etags: {
       notes: lec.notes?.etag ?? null,
       slides: lec.slides?.etag ?? null,
@@ -19063,6 +19181,19 @@ async function readIf4(file) {
     return null;
   }
 }
+function sameFragment(mine, stored) {
+  if (typeof stored !== "string") return false;
+  if (mine === stored) return true;
+  const opts = { stripIds: false };
+  return canonicaliseHtml(mine, opts) === canonicaliseHtml(stored, opts);
+}
+function stable(value) {
+  if (Array.isArray(value)) return value.map(stable);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((k) => [k, stable(value[k])]));
+  }
+  return value;
+}
 function conflictMessage(which, res, mine) {
   const who = res.json?.actor ?? "someone";
   const when = res.json?.ts ? `at ${res.json.ts}` : "at an unknown time";
@@ -19085,12 +19216,19 @@ async function pushLecture(client, lectureDir, { course, lecture, state, log = c
   if (got.status === 404) {
     throw new CliError(`no lecture ${c}/${id} on ${client.origin}; use \`studio import\``, 2);
   }
-  const { published, ...stored } = expectOk(got, `GET ${c}/${id}`).manifest ?? {};
+  const lec = expectOk(got, `GET ${c}/${id}`);
+  const { published, ...stored } = lec.manifest ?? {};
   const manifest = { ...stored, ...mergeManifests(notes.manifest, slides?.manifest), id };
   const etags = { ...state?.etags ?? {} };
   const saved = [];
+  const rewrite = [];
   for (const [which, doc] of [["notes", notes], ["slides", slides]]) {
     if (!doc) continue;
+    if (sameFragment(doc.fragment, lec[which]?.body)) {
+      etags[which] = lec[which].etag;
+      saved.push(`${which} unchanged`);
+      continue;
+    }
     const ifMatch = etags[which];
     if (!ifMatch) {
       throw new CliError(
@@ -19108,15 +19246,31 @@ async function pushLecture(client, lectureDir, { course, lecture, state, log = c
     if (res.status === 412) throw new CliError(conflictMessage(which, res, ifMatch), 3);
     const out = expectOk(res, `PUT ${which}`);
     etags[which] = out.etag;
+    if (out.idsAssigned) rewrite.push(which);
     saved.push(`${which} ${out.bytes} B${out.idsAssigned ? `, ${out.idsAssigned} new ids` : ""}`);
   }
-  const man = await client.call("PUT", `/courses/${c}/lectures/${id}/manifest`, {
-    body: manifest,
-    headers: etags.manifest ? { "if-match": etags.manifest } : {}
-  });
-  if (man.status === 412) throw new CliError(conflictMessage("manifest", man, etags.manifest), 3);
-  etags.manifest = expectOk(man, "PUT manifest").etag;
-  saved.push("manifest");
+  if (rewrite.length) {
+    const again = expectOk(await client.call("GET", `/courses/${c}/lectures/${id}`), `GET ${c}/${id}`);
+    const courseDoc = await repoCourseDoc(client, c);
+    await writeDocuments(dir, again, courseDoc, {
+      platformBase: state?.platformBase ?? REPO_PLATFORM_BASE,
+      demosBase: state?.demosBase ?? REPO_DEMOS_BASE,
+      only: rewrite
+    });
+    saved.push(`ids written back to ${rewrite.map((w) => `${w}.html`).join(", ")}`);
+  }
+  if (JSON.stringify(stable(manifest)) === JSON.stringify(stable({ ...stored, id }))) {
+    etags.manifest = lec.manifestEtag ?? etags.manifest ?? null;
+    saved.push("manifest unchanged");
+  } else {
+    const man = await client.call("PUT", `/courses/${c}/lectures/${id}/manifest`, {
+      body: manifest,
+      headers: etags.manifest ? { "if-match": etags.manifest } : {}
+    });
+    if (man.status === 412) throw new CliError(conflictMessage("manifest", man, etags.manifest), 3);
+    etags.manifest = expectOk(man, "PUT manifest").etag;
+    saved.push("manifest");
+  }
   const courseDir2 = courseDirFor(dir);
   const guides = await pushGuides(client, c, courseDir2, state?.guides ?? {}, { log });
   if (guides.pushed.length) saved.push(`guides: ${guides.pushed.join(", ")}`);

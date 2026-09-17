@@ -368,6 +368,20 @@ paths:
         Validated against `course.schema.json`; an unknown key is a `400`
         naming its JSON Pointer. `id` is overwritten with the one in the path.
         Event `course.save`.
+
+        **`lang` is fixed.** It was chosen when the course was opened; a body
+        that repeats the stored value (a `studio pull` then `push` round-trips
+        the whole document) is fine, one that differs is `400 invalid_course`.
+        `dir` is derived from it and written whatever the body said, as
+        `POST /courses` does.
+
+        **A course that does not exist** is created here only by an
+        **administrator's session**, under the id in the path — `studio import`
+        keeping the repo's own folder names. A token or a connector gets `403
+        session_required` on that branch, the same answer `POST /courses`
+        gives it: a held credential must not open courses. A non-administrator
+        gets `403 admin_required`; they open their own with `POST /courses`.
+        The create writes `dir` and logs `course.create`.
       requestBody:
         required: true
         content:
@@ -809,6 +823,7 @@ paths:
                   slides: { $ref: '#/components/schemas/SaveResult' }
         '400': { $ref: '#/components/responses/invalidDocument' }
         '403': { $ref: '#/components/responses/forbidden' }
+        '422': { $ref: '#/components/responses/unsafeMarkup' }
 
   /courses/{c}/lectures/{l}/notes:
     parameters:
@@ -835,6 +850,16 @@ paths:
 
         `x-changed-blocks` is the list of block ids you changed; it becomes the
         event summary and is otherwise ignored.
+
+        An **empty body** is `400 empty_body`, nothing written: a save carries
+        the whole document, and an empty one would wipe the lecture.
+
+        A fragment carrying markup the schema would not emit — a `<script>`,
+        an `on*` attribute on **any** element, a `javascript:` link — is `422
+        unsafe_markup` naming the blocks, nothing written. A `data-id` that
+        repeats an earlier block's is not refused: the second block is treated
+        as new and gets its own id, counted in `idsAssigned`. The first keeps
+        the id, because that is the one the notes and the history point at.
       requestBody:
         required: true
         content:
@@ -849,6 +874,7 @@ paths:
         '400': { $ref: '#/components/responses/badRequest' }
         '403': { $ref: '#/components/responses/forbidden' }
         '412': { $ref: '#/components/responses/precondition' }
+        '422': { $ref: '#/components/responses/unsafeMarkup' }
 
   /courses/{c}/lectures/{l}/slides:
     parameters:
@@ -879,6 +905,7 @@ paths:
         '400': { $ref: '#/components/responses/badRequest' }
         '403': { $ref: '#/components/responses/forbidden' }
         '412': { $ref: '#/components/responses/precondition' }
+        '422': { $ref: '#/components/responses/unsafeMarkup' }
 
   /courses/{c}/lectures/{l}/manifest:
     parameters:
@@ -949,7 +976,9 @@ paths:
       summary: Copy an old version onto the current document.
       description: |
         A restore is a new version, not a rewind: the history it came from
-        stays. Event `restore`.
+        stays. Event `restore`. A `versionId` that is not one of this
+        document's — unknown, malformed, or another document's — is `404
+        not_found`.
       requestBody:
         required: true
         content:
@@ -2105,6 +2134,28 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/PreconditionError' }
+    unsafeMarkup:
+      description: |
+        The fragment carries markup the schema would not emit — a `<script>`,
+        an `on*` attribute on any element, a `javascript:` or `data:` link, a
+        `style` that fetches — and **nothing was written**. `blocks` names
+        each offending block by the id you can address and lists what was
+        found; fix the working copy and save again.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string, enum: [unsafe_markup] }
+              message: { type: string }
+              blocks:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    block: { type: string }
+                    problems: { type: array, items: { type: string } }
     tooLarge:
       description: Over the cap for this kind of document.
       content:
