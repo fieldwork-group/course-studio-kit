@@ -28,7 +28,7 @@
     },
     "title": {
       "type": "string",
-      "description": "the Hebrew title, as the h1 reads"
+      "description": "the lecture's title, as the h1 reads, in the course's language"
     },
     "docTitle": {
       "type": "string",

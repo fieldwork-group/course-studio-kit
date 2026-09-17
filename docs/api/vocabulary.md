@@ -26,7 +26,7 @@ claims:
 | `result` | `div` | A boxed result — the thing that stays on screen while the board moves on. The one place a formula is allowed to be the whole content of a block. `result wide` when it needs the full measure. |
 | `board-note` | `div` | **What gets derived on the board.** It says exactly which step happens in chalk, so the deck and the board cannot drift apart. A slide stating a result whose derivation is on the board carries one. |
 | `deriv` | `div` | A derivation in the notes: the lines a slide is not allowed to have. |
-| `think` | `div` | A question to the room, usually holding a `details`/`summary` pair whose summary is the word תשובה. |
+| `think` | `div` | A question to the room, usually holding a `details`/`summary` pair whose summary is the course's word for *answer*. |
 | `try` | `div` | Something for the reader to do with a demo. |
 | `note` | `div`, `p` | An aside. Quieter than the surrounding prose, not a different kind of claim. |
 | `cols`, `cols top` | `div` | Two columns. Layout, not meaning. |
@@ -35,8 +35,9 @@ claims:
 | `demo-block` | `figure` | A figure whose content is an interactive demo — the `div` inside it is the mount, and `lecture.json` says what mounts there. |
 | `pending` | `figure` | **A request, not content.** `fig pending` or `demo-block pending` with a `p.brief` inside saying what it should show. The theme labels it: "in preparation" to a student, "within 24 hours" inside the studio. This is how a lecturer asks for a figure she cannot make herself. |
 | `lab` | `span` | The label of a boxed result — "quality factor", "dispersion relation". It is a mark on the leading run, not a child node. |
-| `en` | `span` | The English technical term, in parentheses, on first use in a lecture. `glossary.md` is the authority on which Hebrew term it follows. |
-| `ltr` | `span`, `td` | A left-to-right island inside Hebrew: a symbol, a number, a file name. |
+| `en` | `span` | A Latin-script term, in parentheses, on first use in a lecture. `glossary.md` is the authority on which term of the course's own it follows. |
+| `he` | `span` | Its mirror: a Hebrew term inside a Latin-script page, isolated the same way. Both are offered in both kinds of course, and in a page of its own script the class is a no-op. |
+| `ltr` | `span`, `td` | A left-to-right island: a symbol, a number, a file name. Meaningful in a right-to-left page and harmless in the other. |
 | `cap`, `hint`, `muted`, `tag` | `span` | Caption text, a hint, quieter text, a small label. |
 | `ans` | `p` | The answer inside a `details`. |
 | `sub`, `lead`, `small`, `thesis` | `p` | Type roles: a standfirst, a lead paragraph, small print, the claim a section argues. |
@@ -44,8 +45,10 @@ claims:
 
 ## Three rules
 
-1. **Hebrew never goes inside math.** KaTeX has no Hebrew metrics and renders
-   boxes. Put the Hebrew in HTML *around* the formula — `מ־$\omega_0$`, never
+1. **No prose script inside math.** KaTeX has no metrics for a right-to-left
+   prose face; it renders boxes and lays the run out backwards inside a formula
+   that reads forwards. For a Hebrew course that means: never Hebrew inside
+   `$…$`. Put it in HTML *around* the formula — `מ־$\omega_0$`, never
    `$מ-\omega_0$`. The tokeniser only ever splits a text node at the
    delimiters, so it cannot save you from this; it can only preserve what you
    wrote.

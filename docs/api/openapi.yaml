@@ -229,10 +229,22 @@ paths:
         session only — a token or a connector gets `403 session_required`,
         because a held credential must not be able to widen its owner's reach.
 
-        The body is `course.json` without `lectures`: `id` (the URL slug,
-        Latin letters, digits, `.`, `_` and `-`) and `title` are required.
-        `409 course_exists` when the id is taken. Events `course.create` and
+        The body is `course.json` without `lectures` and **without `id`**:
+        `title` is the only required field. The id is generated — eight
+        characters of lower-case Crockford base32 — and comes back in the
+        answer; a body that carries `id` or `address` is `400 invalid_course`,
+        so a script written before 2026-09-17 fails loudly instead of quietly
+        getting an id it did not ask for. The published address is set later,
+        once, with `PUT /courses/{c}/address`. Events `course.create` and
         `access.grant`.
+
+        **`lang`** is the course's language — `he` or `en` — chosen here and
+        fixed afterwards; `dir` is derived from it and written by the route
+        whatever the body said, and a body whose `dir` contradicts its `lang`
+        is a `400 invalid_course` at `/dir`. The studio's form always sends
+        `lang`. A body without one opens the course as `he` and the answer
+        carries a `warnings` array saying so, so a script written before
+        2026-09-17 goes on working; that default is for one more batch.
 
         **Capped**: a user may open `courseLimit` courses (ten unless an
         administrator raised it on their access record), counted by the
@@ -255,14 +267,21 @@ paths:
         content:
           application/json:
             schema:
-              allOf:
-                - $ref: '#/components/schemas/Course'
-                - type: object
-                  properties:
-                    from:
-                      type: string
-                      enum: [starter]
-                      description: open the course on a copy of this course template
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+                titleEn: { type: [string, 'null'] }
+                term: { type: [string, 'null'] }
+                lecturer: { type: [string, 'null'] }
+                lang: { type: string }
+                dir: { type: string, enum: [rtl, ltr] }
+                theme: { $ref: '#/components/schemas/Theme' }
+                platform: { type: string }
+                from:
+                  type: string
+                  enum: [starter]
+                  description: open the course on a copy of this course template
       responses:
         '201':
           description: Created, and granted.
@@ -278,16 +297,17 @@ paths:
                     type: string
                     enum: [author, admin]
                     description: what the caller now is on the course
+                  warnings:
+                    type: array
+                    items: { type: string }
+                    description: >-
+                      present only when something was assumed — today, a body
+                      with no `lang`, opened as `he`
                   from:
                     type: string
                     description: the template the course was opened on, when it was
         '400': { $ref: '#/components/responses/invalidDocument' }
         '403': { $ref: '#/components/responses/forbidden' }
-        '409':
-          description: A course with that id already exists.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
         '502':
           description: |
             `template_unavailable` — the named template is not in the store, or
@@ -363,18 +383,22 @@ paths:
     delete:
       tags: [courses]
       operationId: deleteCourse
-      summary: Delete the course, whole. Administrators only, with the id repeated.
+      summary: Delete the course, whole. Administrators only, with the title repeated.
       description: |
         Removes every object under the course — lectures, figures, demos,
-        notes, requests, theme — and cleans the course out of every access
-        record, which frees the opener's slot under the cap. The versioned
-        bucket is the only undo. The published copy on the site is not
-        touched. Event `course.delete`.
+        notes, theme — the course's address claim, and the course's place in
+        every access record, which frees the opener's slot under the cap. The
+        versioned bucket is the only undo. The published copy on the site is
+        not touched, so the address is free but the pages at it stay until
+        something is published over them. Event `course.delete`.
       parameters:
         - name: confirm
           in: query
           required: true
-          description: The course id again. Anything else is `400 confirm_required`.
+          description: >-
+            The course **title** again (it was the id until 2026-09-17, when
+            the id stopped being something a person chose). Anything else is
+            `400 confirm_required`.
           schema: { type: string }
       responses:
         '204':
@@ -518,6 +542,67 @@ paths:
         '200': { $ref: '#/components/responses/css' }
         '404': { $ref: '#/components/responses/notFound' }
 
+  /courses/{c}/address:
+    parameters:
+      - $ref: '#/components/parameters/course'
+    put:
+      tags: [courses]
+      operationId: putCourseAddress
+      summary: Set the course's published address, once, before the first publish.
+      description: |
+        The address is the first segment of every published URL, the key the
+        edge looks a course up by, and the reader user name. It was the course
+        id until 2026-09-17; the id is generated now and means nothing to a
+        student, so the address is a field of its own, chosen in the publishing
+        panel at the moment it matters — before the first publish.
+
+        **Unique across the tenant**, and refused with `409 address_taken`
+        otherwise (the race included: the claim object is written with
+        `If-None-Match: *`). The platform's own names are refused with `400
+        reserved_address`: `api`, `lib`, `studio`, `demos`, `index.html`,
+        `robots.txt`, `templates`, `site`. Anything that is not a path segment
+        is `400 invalid_address`.
+
+        **Fixed after the first publish.** Once `course.publishedFirst` is set
+        — stamped by the publish route — this is `409 address_fixed`: students,
+        a syllabus and a bookmark hold the old one. Setting the address it
+        already has is a `200` that writes nothing.
+
+        An author of the course, **from a session**: a token or a connector
+        gets `403 session_required`, the rule the reader password has, for the
+        same reason. Event `course.address`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address]
+              properties:
+                address: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' }
+      responses:
+        '200':
+          description: Set, or already this.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  course: { type: string }
+                  address: { type: string }
+                  fixed: { type: boolean, description: whether the course has published and the address is now immutable }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409':
+          description: |
+            `address_taken` — another course in the tenant is published there;
+            `address_fixed` — this course has published and the address stays;
+            `course_changed` — `course.json` was written by somebody else.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /courses/{c}/reader-password:
     parameters:
       - $ref: '#/components/parameters/course'
@@ -527,8 +612,8 @@ paths:
       summary: The course's reader password, in clear, for an author of the course.
       description: |
         The one credential a student types to open this course's published
-        notes. The user name is **the course id**, fixed, so a class is told
-        two things and neither has to be explained twice.
+        notes. The user name is **the course's address**, fixed, so a class is
+        told two things and neither has to be explained twice.
 
         It is stored in clear on purpose: the edge holds only a digest, and the
         lecturer at the podium being asked "what was the password" is the real
@@ -564,6 +649,11 @@ paths:
         else; no colon because Basic Auth joins the user name and the password
         with one. Anything else is `400 invalid_password` saying which rule.
 
+        **The course needs an address first** — `409 address_required`, because
+        the digest is keyed by it and a password set against nothing would be a
+        password for no door. `PUT /courses/{c}/address` is the step before
+        this one, and the publishing panel asks in that order.
+
         **A session only.** A token or a connector gets `403 session_required`:
         a held credential must not be able to change the door students walk
         through. Event `reader.set`, carrying not one character of it.
@@ -584,11 +674,16 @@ paths:
               schema:
                 type: object
                 properties:
-                  user: { type: string, description: the course id }
+                  user: { type: string, description: the course's address }
                   set: { type: string, format: date-time }
         '400': { $ref: '#/components/responses/badRequest' }
         '403': { $ref: '#/components/responses/forbidden' }
         '404': { $ref: '#/components/responses/notFound' }
+        '409':
+          description: '`address_required` — the course has no address yet.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '502':
           description: |
             The edge's credential store refused the write, so nothing was
@@ -657,6 +752,16 @@ paths:
               schema:
                 type: object
                 properties:
+                  course:
+                    type: object
+                    description: >-
+                      the course's identity and language, so a client that
+                      renders the lecture knows which direction it reads and
+                      which words the platform puts in it
+                    properties:
+                      id: { type: string }
+                      lang: { type: string, enum: [he, en] }
+                      dir: { type: string, enum: [rtl, ltr] }
                   manifest: { $ref: '#/components/schemas/Lecture' }
                   manifestEtag: { type: [string, 'null'] }
                   notes: { $ref: '#/components/schemas/StoredDocument' }
@@ -1044,12 +1149,18 @@ paths:
         running is the PDF, and **a failed print is a failed job, not a failed
         publish**: the pages are live either way and the job record says so.
 
-        **A course with no reader password is refused**, `409
-        reader_password_required`, before a single key is copied: the edge
-        admits a course prefix only when its credential is in the store, so
-        publishing without one would put a lecture on the CDN that every
-        student gets a 404 for. Set one first — `PUT
-        /courses/{c}/reader-password`, or the Readers panel on the course page.
+        **Two refusals before a single key is copied, in this order.** `409
+        address_required` — the course has no published address yet, and every
+        site key, the edge's lookup and the reader user name are that address.
+        Then `409 reader_password_required` — the edge admits a course prefix
+        only when its credential is in the store, so publishing without one
+        would put a lecture on the CDN that every student gets a 404 for. Both
+        are set in the publishing panel on the course page, in that order
+        (`PUT /courses/{c}/address`, then `PUT /courses/{c}/reader-password`).
+
+        Everything written to the site is under the **address**: `<address>/<lecture>/…`,
+        the course-root `theme.css` and the front page's links. The first
+        publish stamps `course.publishedFirst`, which fixes the address.
 
         Events `publish.start`, then `publish.done` or `publish.failed`.
       responses:
@@ -1069,8 +1180,9 @@ paths:
         '404': { $ref: '#/components/responses/notFound' }
         '409':
           description: |
-            `reader_password_required` — the course has no reader password, so
-            nothing was copied. `course` names it.
+            `address_required` — the course has no published address; then
+            `reader_password_required` — it has no reader password. Nothing was
+            copied either way. `course` names it.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -2140,9 +2252,41 @@ components:
       description: '`course.json`. The authority is `docs/api/course.schema.json`.'
       required: [id]
       properties:
-        id: { type: string }
+        id: { type: string, description: 'generated by POST /courses; the store key and the studio URL, never a student URL' }
+        address:
+          type: [string, 'null']
+          description: >-
+            the published prefix — the URL students read, the edge's key and
+            the reader user name. Null until an author sets it with
+            `PUT /courses/{c}/address`, and fixed once `publishedFirst` is set.
+        publishedFirst:
+          type: [string, 'null']
+          format: date-time
+          description: when the course was first published; what fixes the address
         title: { type: string }
-        titleEn: { type: [string, 'null'] }
+        lang:
+          type: string
+          enum: [he, en]
+          description: |
+            The language the course is written in, chosen when it is opened and
+            fixed after that. Everything downstream reads it: the page's
+            `lang`/`dir`, the words the platform puts on a student's page, and
+            the language the editor writes placeholders in. A course stored
+            without one reads as `he` — the migration for every course opened
+            before 2026-09-17.
+        dir:
+          type: string
+          enum: [rtl, ltr]
+          description: |
+            The reading direction, **derived** from `lang` (`he` → `rtl`,
+            `en` → `ltr`) and stored so a page and a stylesheet need not
+            compute it. A body whose `dir` disagrees with its `lang` is a
+            `400 invalid_course` at `/dir`.
+        titleEn:
+          type: [string, 'null']
+          description: >-
+            the Latin-script title, shown in its own bidi isolate; used by a
+            Hebrew course. An English course does not need it.
         term: { type: [string, 'null'] }
         lecturer: { type: [string, 'null'] }
         theme: { $ref: '#/components/schemas/Theme' }

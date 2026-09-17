@@ -65,19 +65,28 @@ a command table will otherwise find it.
 
 # Writing a course through the API
 
-You are editing lecture notes in the Course Studio. The lectures are Hebrew,
-right-to-left, they are read by students in a browser and printed as a handout,
-and they live on typeset formulas and demos that run inside the argument. What
-the course is about is the author's; none of the rules below depend on it. Read this before your first request. It is the part of the
+You are editing lecture notes in the Course Studio — **in the course's own
+language**, which `GET /courses/{c}` tells you (`lang` is `he` or `en`, and
+`dir` follows from it). They are read by students in a browser and printed as a
+handout, and they live on typeset formulas and demos that run inside the
+argument. What the course is about is the author's; none of the rules below
+depend on it. Read this before your first request. It is the part of the
 studio's rules that does not depend on which course you are in; the part that
-does — the notation, the sign conventions, the one Hebrew term per concept —
-is served per course by the API, and this document tells you where.
+does — the notation, the sign conventions, the one term per concept — is served
+per course by the API, and this document tells you where.
+
+**Read `lang` before you write a word.** Everything you add goes into that
+language: the prose, a caption, the label on a result box, a new section's
+title. A Hebrew paragraph in an English course is not a style slip, it is a
+page that reads in two directions.
 
 ## Three rules you must not break
 
-1. **Hebrew never goes inside math.** KaTeX has no Hebrew metrics and renders
-   boxes. Put the Hebrew in HTML *around* the formula: `מ־$\omega_0$`, never
-   `$מ-\omega_0$`.
+1. **No prose script inside math.** KaTeX has no metrics for a right-to-left
+   prose face; it renders boxes and lays the run out backwards inside a formula
+   that reads forwards. For a Hebrew course that means: never Hebrew inside
+   `$…$`. Put it in HTML *around* the formula — `מ־$\omega_0$`, never
+   `$מ-\omega_0$` — and the same for any other right-to-left script.
 2. **`.board-note` marks what is derived on the board.** The lecturer derives in
    chalk; the page carries what chalk cannot. When a page states a result whose
    derivation happens on the board, say so in a `<div class="board-note">`, in
@@ -86,8 +95,8 @@ is served per course by the API, and this document tells you where.
    notes are written first and carry every derivation. The deck is *cut from*
    them: boxed results, setup figures and demos, nothing else.
 
-Beyond those: use the Hebrew term the course's glossary guide already has (see
-*The session*, below). Do not invent a second translation for a term that is in
+Beyond those: use the term the course's glossary guide already has (see *The
+session*, below). Do not invent a second translation for a term that is in
 there. Prose is concise and accurate, with no embellishment.
 
 ## What a lecture is
@@ -172,17 +181,17 @@ is the same 412, carrying the same current ETag.
 GET /openapi.json                    the contract: every route, request and answer
 GET /me                              → { actor, groups, tenant }
 GET /courses                         → the courses you can see
-GET /courses/{c}                     → the course, its lectures, its guides
+GET /courses/{c}                     → the course, its language, its lectures, its guides
 GET /courses/{c}/guides/conventions  → the notation and the sign conventions
-GET /courses/{c}/guides/glossary     → the one Hebrew term per concept
+GET /courses/{c}/guides/glossary     → the one term per concept
 GET /courses/{c}/guides/style        → how the prose should read
 GET /courses/{c}/guides/syllabus     → what is taught when, and what state it is in
 ```
 
 Read the guides before you write a line of the course. They are the difference
 between a lecture that fits it and one that has to be rewritten: which symbol
-means which quantity, which sign convention the board uses, which Hebrew word
-the course has already chosen for a term that has more than one.
+means which quantity, which sign convention the board uses, which word the
+course has already chosen for a term that has more than one.
 
 `groups` in `GET /me` tells you what the rest of the API will allow. `authors`
 writes; `viewers` reads everything, including drafts, and is refused every
@@ -190,8 +199,8 @@ non-GET.
 
 A course that is not in your list is one you have not been granted, and there
 is no way through the API to reach it. A *new* course is the lecturer's to
-open — `POST /courses` with `{ id, title }`, which makes them its author in the
-same request — but only from a signed-in session in the studio or the CLI: a
+open — `POST /courses` with `{ id, title, lang }`, which makes them its author
+in the same request — but only from a signed-in session in the studio or the CLI: a
 token or a connector gets `403 session_required`, because a held credential
 must not be able to widen the reach of the person holding it. If you are asked
 to start a course, say that the lecturer opens it once in the studio (the
@@ -250,16 +259,30 @@ GET  /courses/{c}/lectures/{l}/publish/{job}         poll: copying → rendering
 The pages are already live when the `202` arrives; what is still running is the
 PDF. A failed print is a failed job, not a failed publish.
 
-**A course with no reader password cannot be published**: `409
-reader_password_required`, before anything is copied. Students open a published
-course with the **course id** as the user name and a password its author sets
-once, and the edge admits a course only when that password is on it — so
-publishing without one would put a lecture on the site that every student gets
-a 404 for. It is one action by the course's author, from a signed-in session:
-the Readers panel on the course page in the studio, or `studio reader set <c>`
-at a shell. There is no route and no tool for you to do it with — a held
-credential must not be able to change the door students walk through. If you
-meet the 409, say so and ask; do not retry.
+**A course with no address, or no reader password, cannot be published**: `409
+address_required` and then `409 reader_password_required`, before anything is
+copied.
+
+The **address** is the course's published prefix — the first segment of every
+student URL (`/<address>/<lecture>/notes`), the key the edge looks the course
+up by, and the user name students type. It is not the course id: since
+2026-09-17 the id is generated, is the store's key, appears in the studio's own
+URL and in your requests, and is seen by no student. The address is chosen
+once, before the first publish, and is fixed afterwards. `GET /courses/{c}`
+carries it as `course.address`, with `course.publishedFirst` saying whether it
+is fixed yet.
+
+The **reader password** goes with it: the edge admits a course only when its
+credential is on it, so publishing without one would put a lecture on the site
+that every student gets a 404 for.
+
+Both are one action by the course's author, from a signed-in session: the
+Publishing panel on the course page in the studio, or `studio address set <c>
+<address>` and `studio reader set <c>` at a shell. **Neither is yours to set** —
+there is a route for the address but it refuses a token or a connector with
+`403 session_required`, because a held credential must not be able to move or
+open the door students walk through. If you meet either 409, say so and ask; do
+not retry.
 
 ## Block ids
 
@@ -372,8 +395,9 @@ are unsure about, quote the sentence, and say what you would do.
 | `unsafe_markup` (422) | the fragment carried markup the schema would not emit; nothing was written |
 | `invalid_manifest` (400) | the manifest failed its schema; `path` is the JSON Pointer of the offending key |
 | `locked` (409) | someone has the lecture open. A courtesy, not a mutex — `If-Match` is what actually protects the save |
+| `address_required` (409) | the course has no published address yet, and every student URL is that address. Its author sets one; you cannot |
 | `reader_password_required` (409) | the course has no reader password, so a publish would be invisible to students. Its author sets one; you cannot |
-| `session_required` (403) | a route a held credential may not call at all — `/tokens`, `/access`, `POST /courses`, the reader password |
+| `session_required` (403) | a route a held credential may not call at all — `/tokens`, `/access`, `POST /courses`, the course address, the reader password |
 | `forbidden` (403) | a `viewers` session tried to write, or the thing belongs to someone else |
 | `too_large` | over the cap: 5 MB a figure, 256 KB a guide |
 
@@ -396,7 +420,8 @@ studio_publish_status { course, lecture, job }
 Three things about the tools that are not obvious from the names:
 
 - **`studio_get_lecture` does not return the fragment unless you ask.** A
-  lecture is 60 KB of Hebrew, which is about twenty thousand tokens, and a
+  lecture is 60 KB of prose and markup, which is about twenty thousand tokens,
+  and a
   client that truncates a tool result cuts it mid-formula. The default answer
   is the manifest, the ETags and a list of the sections with their sizes; pass
   `sections: ["s3"]` to read one or `sections: "all"` for the whole thing —

@@ -17683,6 +17683,59 @@ function isDefaultTheme(theme) {
   return JSON.stringify([a.preset, a.tokens, a.fonts]) === JSON.stringify([b.preset, b.tokens, b.fonts]);
 }
 
+// studio/schema/src/strings.js
+var LANGS = ["he", "en"];
+var DEFAULT_LANG = "he";
+function dirOf(lang) {
+  return lang === "en" ? "ltr" : "rtl";
+}
+var langOf = (course) => LANGS.includes(course?.lang) ? course.lang : DEFAULT_LANG;
+var courseDir = (course) => dirOf(langOf(course));
+var STRINGS = {
+  he: {
+    /** the `<nav class="toc">` heading, and its `aria-label` */
+    toc: "תוכן העניינים",
+    /** the index page's link to the inlined single-file copy */
+    standalone: "קובץ בודד",
+    /** the index page's link to the printed handout */
+    pdf: "PDF",
+    /** a demo, as the platform names one: the ◆ marker in the TOC, the
+     *  frame's title when the manifest carries none *(bundle)* */
+    demo: "הדגמה",
+    /** the demo frame's play button, before the glyph *(bundle)* */
+    play: "הפעל",
+    /** …and once it is running *(bundle)* */
+    pause: "עצור",
+    /** the demo frame's reset button *(bundle)* */
+    reset: "אתחל",
+    /** what stands in for a demo whose bundle never loaded *(bundle)* */
+    demoOffline: "ההדגמה האינטראקטיבית לא נטענה. ודאו שתיקיית ההדגמה נמצאת ליד הדף. שאר הסיכומים — הנוסחאות, התוכן והתרגילים — נקראים כרגיל גם בלעדיה.",
+    /** the label the theme prints over a `div.think` *(css)* */
+    think: "חשבו",
+    /** …over a figure the author has asked for and not yet made *(css)* */
+    figurePending: "איור בהכנה",
+    /** …and over a demo in the same state *(css)* */
+    demoPending: "הדגמה בהכנה"
+  },
+  en: {
+    toc: "Contents",
+    standalone: "Single file",
+    pdf: "PDF",
+    demo: "Demo",
+    play: "Play",
+    pause: "Pause",
+    reset: "Reset",
+    demoOffline: "The interactive demo did not load. Check that the demo folder sits beside the page. The rest of the notes — the formulas, the text and the exercises — read as they always do.",
+    think: "Think",
+    figurePending: "Figure in preparation",
+    demoPending: "Demo in preparation"
+  }
+};
+function stringsFor(lang) {
+  return STRINGS[LANGS.includes(lang) ? lang : DEFAULT_LANG];
+}
+var stringsOf = (course) => stringsFor(langOf(course));
+
 // studio/schema/src/shell.js
 var BOOT_COMMENT_NOTES = "  // Classic, not a module: the notes must read correctly even when this file\n  // is opened directly from disk. Only the demos need a server.";
 var BOOT_COMMENT_SLIDES = "<!-- Classic bundles, not modules: the deck must come up when this file is\n     double-clicked on a podium PC, and modules do not load from file://. -->";
@@ -17766,8 +17819,9 @@ function shell({
   const kind = mode === "slides" ? "slides" : "notes";
   const { doc } = parseFragment(fragment, { kind, parse: parse5 });
   const title = manifest.docTitle || manifest.title || "";
-  const lang = course.lang ?? "he";
-  const dir = course.dir ?? "rtl";
+  const lang = langOf(course);
+  const dir = courseDir(course);
+  const S = stringsOf(course);
   if (mode === "slides") {
     const slides = [];
     doc.content.forEach((n) => slides.push(serializeBlock(n, { indent: 2 })));
@@ -17813,8 +17867,8 @@ function shell({
     "",
     head ? serializeBlock(head, { indent: 0, kicker: manifest.kicker }) : "",
     "",
-    '<nav class="toc no-print" aria-label="תוכן העניינים">',
-    "  <h2>תוכן העניינים</h2>",
+    `<nav class="toc no-print" aria-label="${escapeAttr(S.toc)}">`,
+    `  <h2>${escapeText(S.toc)}</h2>`,
     "  <ol></ol>",
     "</nav>",
     "",
@@ -17977,7 +18031,7 @@ function courseDirFor(lectureDir) {
   if (path3.basename(parent) !== "lectures") return null;
   return path3.dirname(parent);
 }
-var guideFile = (courseDir, name) => path3.join(courseDir, `${name}.md`);
+var guideFile = (courseDir2, name) => path3.join(courseDir2, `${name}.md`);
 async function readIf(file) {
   try {
     return await fs3.readFile(file, "utf8");
@@ -17985,9 +18039,9 @@ async function readIf(file) {
     return null;
   }
 }
-async function pullGuides(client, course, courseDir, { log = console.log } = {}) {
+async function pullGuides(client, course, courseDir2, { log = console.log } = {}) {
   const out = { written: [], same: [], etags: {} };
-  if (!courseDir) return out;
+  if (!courseDir2) return out;
   const listed = await client.call("GET", `/courses/${course}/guides`);
   if (listed.status >= 300) {
     log(`  ! guides: ${listed.status} ${listed.json?.message ?? ""}`);
@@ -18001,23 +18055,23 @@ async function pullGuides(client, course, courseDir, { log = console.log } = {})
     }
     const body = res.bytes.toString("utf8");
     out.etags[name] = etagOf(body);
-    const file = guideFile(courseDir, name);
+    const file = guideFile(courseDir2, name);
     if (await readIf(file) === body) {
       out.same.push(`${name}.md`);
       continue;
     }
-    await fs3.mkdir(courseDir, { recursive: true });
+    await fs3.mkdir(courseDir2, { recursive: true });
     await fs3.writeFile(file, body, "utf8");
     out.written.push(`${name}.md`);
   }
   return out;
 }
-async function pushGuides(client, course, courseDir, known = {}, { log = console.log } = {}) {
+async function pushGuides(client, course, courseDir2, known = {}, { log = console.log } = {}) {
   const etags = { ...known };
   const pushed = [];
-  if (!courseDir) return { pushed, etags };
+  if (!courseDir2) return { pushed, etags };
   for (const name of GUIDE_NAMES) {
-    const body = await readIf(guideFile(courseDir, name));
+    const body = await readIf(guideFile(courseDir2, name));
     if (body === null) continue;
     const mine = etagOf(body);
     if (known[name] === mine) continue;
@@ -18171,7 +18225,7 @@ async function writeFile(file, body) {
   await fs5.mkdir(path5.dirname(file), { recursive: true });
   await fs5.writeFile(file, body);
 }
-var demosDirFor = (courseDir) => path5.join(path5.resolve(courseDir), "demos");
+var demosDirFor = (courseDir2) => path5.join(path5.resolve(courseDir2), "demos");
 var demosDirForLecture = (lectureDir) => path5.resolve(lectureDir, "..", "..", "demos");
 async function demosList(client, { course, json = false, log = console.log } = {}) {
   const res = await client.call("GET", `/courses/${course}/demos`);
@@ -18212,8 +18266,8 @@ async function pullDemo(client, { course, slug, dir, log = console.log }) {
   }
   return { slug, etags, written };
 }
-async function demosPull(client, courseDir, { course, only = null, announce = true, log = console.log } = {}) {
-  const dir = demosDirFor(courseDir);
+async function demosPull(client, courseDir2, { course, only = null, announce = true, log = console.log } = {}) {
+  const dir = demosDirFor(courseDir2);
   const list = await client.call("GET", `/courses/${course}/demos`);
   const demos = expectOk(list, `GET ${course}/demos`).demos ?? [];
   const wanted = only ? demos.filter((d) => only.includes(d.slug)) : demos;
@@ -18224,7 +18278,7 @@ async function demosPull(client, courseDir, { course, only = null, announce = tr
     etags[demo.slug] = got.etags;
     written.push(...got.written);
   }
-  const root = path5.resolve(courseDir);
+  const root = path5.resolve(courseDir2);
   const state = await readState(root);
   await writeState(root, {
     ...state ?? {},
@@ -18253,8 +18307,8 @@ async function demosPush(client, demoDir, { course, log = console.log, stateless
   } catch (err) {
     throw new CliError(`demo.json is not JSON: ${err.message}`);
   }
-  const courseDir = path5.resolve(dir, "..", "..");
-  const state = stateless ? null : await readState(courseDir);
+  const courseDir2 = path5.resolve(dir, "..", "..");
+  const state = stateless ? null : await readState(courseDir2);
   const known = state?.demos?.[slug] ?? {};
   const etags = { ...known };
   const sent = [];
@@ -18288,7 +18342,7 @@ async function demosPush(client, demoDir, { course, log = console.log, stateless
     sent.push(`${file.name} (${bytes.length} B)`);
   }
   if (!stateless) {
-    await writeState(courseDir, {
+    await writeState(courseDir2, {
       ...state ?? {},
       course,
       api: client.origin,
@@ -18399,8 +18453,8 @@ async function pullLecture(client, lectureDir, {
   const thread = (await client.call("GET", `/courses/${c}/lectures/${id}/notes-thread`)).json ?? { notes: [] };
   await writeAuthorNotes(dir, thread, lec.notes?.body ?? "", manifest);
   written.push("author-notes.md");
-  const courseDir = courseDirFor(dir);
-  const guides = guidesOpt === true ? await pullGuides(client, c, courseDir, { log }) : guidesOpt || { written: [], same: [], etags: {} };
+  const courseDir2 = courseDirFor(dir);
+  const guides = guidesOpt === true ? await pullGuides(client, c, courseDir2, { log }) : guidesOpt || { written: [], same: [], etags: {} };
   const state = await writeState(dir, {
     course: c,
     lecture: id,
@@ -18418,7 +18472,7 @@ async function pullLecture(client, lectureDir, {
   for (const f of written) log(`  ${f}`);
   for (const f of guides.written) log(`  ../${f}`);
   if (guides.same.length) log(`  (${guides.same.length} guide(s) unchanged)`);
-  if (!courseDir && guidesOpt === true) {
+  if (!courseDir2 && guidesOpt === true) {
     log("  (no guides: this folder's parent is not `lectures/`, so there is no course folder to write them beside)");
   }
   return { dir, course: c, lecture: id, state, written, manifest, guides };
@@ -18482,7 +18536,7 @@ async function importLecture(client, lectureDir, { course, author, title, log = 
   await useNodeDom();
   const dir = path7.resolve(lectureDir);
   const id = path7.basename(dir);
-  const c = course ?? courseIdFor(dir);
+  let c = course ?? courseIdFor(dir);
   if (!c) {
     throw new Error(
       `which course is ${dir} part of? it is not under a \`courses/<id>/\` path, so say so:
@@ -18497,15 +18551,30 @@ async function importLecture(client, lectureDir, { course, author, title, log = 
   const manifest = mergeManifests(notes.manifest, slides?.manifest);
   const have = await client.call("GET", `/courses/${c}`);
   if (have.status === 404) {
-    const { lectures: _none, ...seed } = courseSeed(c, title);
-    const made = await client.call("POST", "/courses", { body: seed });
-    if (made.status === 403) {
+    const made = await client.call("PUT", `/courses/${encodeURIComponent(c)}`, {
+      body: courseSeed(c, title)
+    });
+    if (made.status === 403 && made.json?.error === "admin_required") {
+      const { lectures: _none, id: _chosen, ...seed } = courseSeed(c, title);
+      const opened = await client.call("POST", "/courses", { body: seed });
+      if (opened.status === 403) {
+        throw new Error(
+          `could not open a course for ${c} (${opened.json?.error ?? opened.status}): opening a course needs a signed-in author — run \`studio login\` rather than importing with a token, or import into a course that exists`
+        );
+      }
+      if (opened.status >= 300) throw new Error(`could not open a course for ${c}: ${opened.status} ${opened.text}`);
+      c = opened.json.course.id;
+      log(`opened course ${c} (you are its author) — course ids are generated now;`);
+      log(`  import the rest of this course with \`--course ${c}\``);
+    } else if (made.status === 403) {
       throw new Error(
         `could not create course ${c} (${made.json?.error ?? made.status}): opening a course needs a signed-in author — run \`studio login\` rather than importing with a token, or import into a course that exists`
       );
+    } else if (made.status >= 300) {
+      throw new Error(`could not create course ${c}: ${made.status} ${made.text}`);
+    } else {
+      log(`created course ${c}`);
     }
-    if (made.status >= 300) throw new Error(`could not create course ${c}: ${made.status} ${made.text}`);
-    log(`created course ${c} (you are its author)`);
     if (author) await grantAuthor(client, c, author, log);
   } else if (have.status >= 300) {
     throw new Error(`GET /courses/${c}: ${have.status} ${have.text}`);
@@ -18536,8 +18605,8 @@ async function importLecture(client, lectureDir, { course, author, title, log = 
       log(`  uploaded ${sub}/${name} (${bytes.length} B)`);
     }
   }
-  const courseDir = courseDirFor(dir);
-  const demosDir = courseDir ? demosDirFor(courseDir) : null;
+  const courseDir2 = courseDirFor(dir);
+  const demosDir = courseDir2 ? demosDirFor(courseDir2) : null;
   for (const slug of demosDir ? wiredSlugs(manifest) : []) {
     const demoDir = path7.join(demosDir, slug);
     try {
@@ -18570,16 +18639,16 @@ async function pullCourse(client, { course, into = ".", log = console.log } = {}
   if (got.status === 404) throw new CliError(`no course ${course} on ${client.origin}`, 2);
   const doc = expectOk(got, `GET /courses/${course}`);
   const lectures = doc.lectures ?? [];
-  const courseDir = courseDirIn(into, course);
-  log(`pulling ${course} from ${client.origin} → ${courseDir}`);
-  const guides = await pullGuides(client, course, courseDir, { log });
+  const courseDir2 = courseDirIn(into, course);
+  log(`pulling ${course} from ${client.origin} → ${courseDir2}`);
+  const guides = await pullGuides(client, course, courseDir2, { log });
   for (const f of guides.written) log(`  ${f}`);
   if (guides.same.length) log(`  (${guides.same.length} guide(s) unchanged)`);
-  const demos = await demosPull(client, courseDir, { course, announce: false, log });
+  const demos = await demosPull(client, courseDir2, { course, announce: false, log });
   for (const f of demos.written) log(`  demos/${f}`);
   const pulled = [];
   for (const row of lectures) {
-    const dir = path8.join(courseDir, "lectures", row.id);
+    const dir = path8.join(courseDir2, "lectures", row.id);
     await pullLecture(client, dir, {
       // The guides were written a moment ago; the lecture wants their ETags in
       // its state, not their names on the screen a second time.
@@ -18596,7 +18665,7 @@ async function pullCourse(client, { course, into = ".", log = console.log } = {}
   }
   log("");
   log(`${course}: ${pulled.length} lecture(s), ${demos.demos.length} demo(s), ${guides.written.length + guides.same.length} guide(s)`);
-  return { dir: courseDir, course, lectures: pulled, demos: demos.demos, guides };
+  return { dir: courseDir2, course, lectures: pulled, demos: demos.demos, guides };
 }
 
 // studio/cli/src/init.js
@@ -19042,8 +19111,8 @@ async function pushLecture(client, lectureDir, { course, lecture, state, log = c
   if (man.status === 412) throw new CliError(conflictMessage("manifest", man, etags.manifest), 3);
   etags.manifest = expectOk(man, "PUT manifest").etag;
   saved.push("manifest");
-  const courseDir = courseDirFor(dir);
-  const guides = await pushGuides(client, c, courseDir, state?.guides ?? {}, { log });
+  const courseDir2 = courseDirFor(dir);
+  const guides = await pushGuides(client, c, courseDir2, state?.guides ?? {}, { log });
   if (guides.pushed.length) saved.push(`guides: ${guides.pushed.join(", ")}`);
   const next = await writeState(dir, {
     ...state,
@@ -19293,6 +19362,46 @@ var summarise = (roles) => {
   return pairs2.length ? pairs2.map(([c, r]) => `${c} ${r}`).join(" · ") : "no courses";
 };
 
+// studio/cli/src/address.js
+var ADDRESS = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+var RESERVED = ["api", "lib", "studio", "demos", "index.html", "robots.txt", "templates", "site"];
+function checkAddress(value) {
+  const address = String(value ?? "").trim();
+  if (!ADDRESS.test(address) || address.includes("..")) {
+    return "an address is Latin letters, digits, dots, underscores and dashes, starting with a letter or a digit";
+  }
+  if (RESERVED.includes(address.toLowerCase())) {
+    return `${address} belongs to the platform; reserved: ${RESERVED.join(", ")}`;
+  }
+  return null;
+}
+async function addressSet(client, { course, address, log = console.log } = {}) {
+  if (!course || !address) throw new CliError("usage: studio address set <course> <address>");
+  const wrong = checkAddress(address);
+  if (wrong) throw new CliError(wrong);
+  const res = await client.call("PUT", `/courses/${encodeURIComponent(course)}/address`, {
+    body: { address: String(address).trim() }
+  });
+  if (res.status === 403 && res.json?.error === "session_required") {
+    throw new CliError(
+      "setting a course’s address needs a signed-in session, not a token.\n  run `studio login` (or use --user against a dev server) and try again."
+    );
+  }
+  if (res.status === 409 && res.json?.error === "address_fixed") {
+    throw new CliError(
+      `${course} has already published at ${res.json.address}, so its address stays as it is.`,
+      2
+    );
+  }
+  if (res.status === 409 && res.json?.error === "address_taken") {
+    throw new CliError(`another course in this studio is published at ${address}.`, 2);
+  }
+  const doc = expectOk(res, `PUT /courses/${course}/address`);
+  log(`${course}: published at ${doc.address}`);
+  if (!doc.fixed) log("  it can still be changed until the first publish");
+  return doc;
+}
+
 // studio/cli/src/notes.js
 var firstLine = (s) => String(s ?? "").split("\n")[0].trim();
 var clip2 = (s, n) => s.length <= n ? s : `${s.slice(0, n - 1)}…`;
@@ -19419,6 +19528,7 @@ var USAGE = `usage:
   studio tokens  create  <label> [--scopes read,write] [--course id] [--expires 90d] [--json]
   studio tokens  list    [--json]
   studio tokens  revoke  <id>
+  studio address set   <course> <address>         once, before the first publish
   studio reader  set   <course>                   prompts; never a flag
   studio reader  show  <course>                   [--json]
   studio demos   list  [--course id] [--json]
@@ -19516,6 +19626,16 @@ async function tokensCommand(sub, rest2) {
       return tokensRevoke(client, { id: rest2[0], log });
     default:
       throw new CliError(`unknown: studio tokens ${sub ?? ""}
+${USAGE}`);
+  }
+}
+async function addressCommand(sub, rest2) {
+  const client = createClient({ base: conn.api, user: conn.user, token: conn.token });
+  switch (sub) {
+    case "set":
+      return addressSet(client, { course: rest2[0] ?? args.course, address: rest2[1], log: console.log });
+    default:
+      throw new CliError(`unknown: studio address ${sub ?? ""}
 ${USAGE}`);
   }
 }
@@ -19661,6 +19781,9 @@ try {
       break;
     case "demos":
       await demosCommand(rest[0], rest.slice(1));
+      break;
+    case "address":
+      await addressCommand(rest[0], rest.slice(1));
       break;
     case "reader":
       await readerCommand(rest[0], rest.slice(1));

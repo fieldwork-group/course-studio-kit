@@ -69,6 +69,13 @@ and **reset**. Inside the stage are two things:
 </div>
 ```
 
+**The chrome is in the course's language and the demo is in the author's.**
+`play`, `pause`, `reset` and the frame's `title` come from a table in
+`demos/src/core/frame.js`, read off the nearest `[lang]` — `<html>` on a
+published page, the lecture's root in the studio. Nothing about the *file*
+changes: it is its own document, it says what it likes, and the platform never
+looks inside it.
+
 The still lies over the frame until the demo says it is ready, letterboxed into
 the stage against its own background. On paper the frame is hidden and the
 still is what prints — a printer runs no scripts, so the still is not

@@ -13,13 +13,31 @@
       "type": "string",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"
     },
+    "address": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$",
+      "description": "the published prefix — the URL students read, the edge key and the reader user name; null until an author sets it, and fixed after the first publish"
+    },
+    "publishedFirst": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "when this course was first published; what makes the address immutable"
+    },
     "title": {
       "type": "string",
-      "description": "the Hebrew name of the course"
+      "description": "the course's name, in its own language"
     },
     "lang": {
-      "type": "string",
-      "description": "the course language, e.g. `he` — written by the studio since the language switch (2026-09-09)"
+      "enum": [
+        "he",
+        "en"
+      ],
+      "description": "the language the course is written in; chosen once when the course is opened. A course stored without one reads as `he`, which is the migration for every course opened before 2026-09-17"
     },
     "dir": {
       "type": "string",
@@ -27,14 +45,14 @@
         "rtl",
         "ltr"
       ],
-      "description": "the reading direction of the course pages"
+      "description": "the reading direction of the course pages. Derived from `lang` (`he` → `rtl`, `en` → `ltr`) and stored so a page and a stylesheet need not compute it; one that disagrees with `lang` is refused"
     },
     "titleEn": {
       "type": [
         "string",
         "null"
       ],
-      "description": "the English name, shown in its own bidi isolate"
+      "description": "the Latin-script title, shown in its own bidi isolate; used by a Hebrew course. An English course does not need it and the new-course form does not offer it"
     },
     "term": {
       "type": [
