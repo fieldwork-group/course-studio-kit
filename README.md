@@ -2,10 +2,10 @@
 
 Welcome. This repository is the public side of the **Fieldwork Course Studio**:
 a hosted studio where lecture notes and decks are written in the browser, block
-by block, exactly as students will read them, with typeset formulas and
-interactive demos running inside the argument. The studio is at
-<https://studio.fieldwork-group.com/studio/>; the published courses are at
-<https://courses.fieldwork-group.com/>.
+by block, exactly as students will read them — typeset formulas and live demos
+inside the argument, in Hebrew or in English, each in its own direction. The
+studio is at <https://studio.fieldwork-group.com/studio/>; the published
+courses are at <https://courses.fieldwork-group.com/>.
 
 Everything the studio's own editor does is an HTTP call, and the same calls are
 open to an AI assistant, a script, or an agent of your own. This kit is what you
