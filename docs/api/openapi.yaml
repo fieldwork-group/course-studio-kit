@@ -252,16 +252,20 @@ paths:
         and `limit` in the body. Administrators are not counted.
 
         **`from`** opens the course on a copy of a course template instead of
-        empty. The only template is `starter`, the tour of the studio every
-        new author is given: every lecture, guide, demo and figure under
-        `templates/starter/` is copied into the new course, and `course.json`
-        is written from this request — the id and title yours, the lecturer
-        line the caller. An unknown name is `400 invalid_template` and nothing
-        is written; a template the store does not hold is `502
-        template_unavailable`, likewise with nothing left behind. A course
-        opened this way is an ordinary course: it counts against the ceiling,
-        it has no reader password yet, and the author may delete every lecture
-        in it.
+        empty. There are two, `starter-he` and `starter-en` — the tour of the
+        studio every new author is given, written once per language rather
+        than translated: every lecture, guide, demo and figure under
+        `templates/<from>/` is copied into the new course, and `course.json`
+        is written from this request — the title yours, the lecturer line the
+        caller, the language the template's. An unknown name is `400
+        invalid_template` and nothing is written; a template the store does
+        not hold is `502 template_unavailable`, likewise with nothing left
+        behind. A `lang` that disagrees with the template's is `400
+        invalid_course`: copying the Hebrew tour into a course declared
+        English is two lectures of Hebrew prose on a left-to-right page. A
+        course opened this way is an ordinary course: it counts against the
+        ceiling, it has no reader password yet, and the author may delete every
+        lecture in it.
       requestBody:
         required: true
         content:
@@ -280,8 +284,10 @@ paths:
                 platform: { type: string }
                 from:
                   type: string
-                  enum: [starter]
-                  description: open the course on a copy of this course template
+                  enum: [starter-he, starter-en]
+                  description: >-
+                    open the course on a copy of this course template; it
+                    decides the course's language unless `lang` says the same
       responses:
         '201':
           description: Created, and granted.

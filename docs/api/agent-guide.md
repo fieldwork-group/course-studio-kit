@@ -2,13 +2,13 @@
 
 You are editing lecture notes in the Course Studio — **in the course's own
 language**, which `GET /courses/{c}` tells you (`lang` is `he` or `en`, and
-`dir` follows from it). They are read by students in a browser and printed as a
+`dir` follows from it). Students read them in a browser and print them as a
 handout, and they live on typeset formulas and demos that run inside the
-argument. What the course is about is the author's; none of the rules below
-depend on it. Read this before your first request. It is the part of the
-studio's rules that does not depend on which course you are in; the part that
-does — the notation, the sign conventions, the one term per concept — is served
-per course by the API, and this document tells you where.
+argument. What the course is about is the author's, and none of the rules here
+depend on it. Read this before your first request: it is the part of the
+studio's rules that holds in every course. The part that does not — the
+notation, the sign conventions, the one term per concept — is served per course
+by the API, and this document tells you where.
 
 **Read `lang` before you write a word.** Everything you add goes into that
 language: the prose, a caption, the label on a result box, a new section's
@@ -134,7 +134,7 @@ non-GET.
 
 A course that is not in your list is one you have not been granted, and there
 is no way through the API to reach it. A *new* course is the lecturer's to
-open — `POST /courses` with `{ id, title, lang }`, which makes them its author
+open — `POST /courses` with `{ title, lang }`, which makes them its author
 in the same request — but only from a signed-in session in the studio or the CLI: a
 token or a connector gets `403 session_required`, because a held credential
 must not be able to widen the reach of the person holding it. If you are asked
@@ -144,15 +144,24 @@ courses unless an administrator raises their limit; deleting one is an
 administrator's, from the foot of the course page.
 
 A course opened that way can start from a **template** instead of empty —
-`{ id, title, from: 'starter' }`, offered on the same page — which fills it
-with a short tour of the studio: six lectures, four guides and four demos, in
-Hebrew, written to be read once and then edited into something else. Every new
-author gets one on their first sign-in. If a lecturer you are working with
-still has theirs, it is not content anybody is attached to: it is the fastest
-thing in the course to overwrite, and reading its `style` guide is the
+`{ title, from: 'starter-he' }` or `{ title, from: 'starter-en' }`, offered on
+the same page — which fills it with a short tour of the studio in two lectures,
+written to be read once and then edited into something else. There is one
+template per language and they are two courses rather than one translated, so
+`from` decides the course's language: send no `lang` and it is the template's,
+send one that disagrees and the answer is `400 invalid_course`.
+
+Every new author gets one on their first sign-in. If a lecturer you are working
+with still has theirs, it is not content anybody is attached to: it is the
+fastest thing in the course to overwrite, and reading its `style` guide is the
 quickest way to learn how this course wants to sound. It is also the example to
-read if you have never seen a lecture in this studio — it uses every block type
-and wires a demo — and it costs nobody anything if you read it first.
+read if you have never seen a lecture in this studio — it uses every block
+type, wires two demos and carries a deck — and it costs nobody anything if you
+read it first.
+
+The four guides are still read here and nowhere else in the interface: the
+studio stopped drawing them on the course page on 2026-09-17, because they are
+written in the repo and read by you.
 
 ## The edit loop
 
