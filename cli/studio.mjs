@@ -17699,6 +17699,10 @@ var STRINGS = {
     standalone: "קובץ בודד",
     /** the index page's link to the printed handout */
     pdf: "PDF",
+    /** the site root's heading, and the course page's link back up to it */
+    courses: "קורסים",
+    /** …and what that root says when nothing is published yet */
+    noCourses: "עדיין לא פורסם כאן אף קורס.",
     /** a demo, as the platform names one: the ◆ marker in the TOC, the
      *  frame's title when the manifest carries none *(bundle)* */
     demo: "הדגמה",
@@ -17721,6 +17725,8 @@ var STRINGS = {
     toc: "Contents",
     standalone: "Single file",
     pdf: "PDF",
+    courses: "Courses",
+    noCourses: "No course has been published here yet.",
     demo: "Demo",
     play: "Play",
     pause: "Pause",

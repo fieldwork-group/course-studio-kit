@@ -1168,6 +1168,13 @@ paths:
         the course-root `theme.css` and the front page's links. The first
         publish stamps `course.publishedFirst`, which fixes the address.
 
+        **Two front pages are rewritten** (M28): the course's lecture list at
+        `<address>/index.html`, behind the course's reader password, and the
+        tenant's public landing at `/index.html` — one card per published
+        course, with no lecture title on it — rebuilt from every course in the
+        tenant so a second author's publish adds a card rather than replacing
+        one. Both keys are in the job's `keys` list.
+
         Events `publish.start`, then `publish.done` or `publish.failed`.
       responses:
         '202':
