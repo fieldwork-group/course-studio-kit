@@ -64,7 +64,8 @@ scope it to one course, and revoke it in another. On a machine it lives in a
 `.env` the folder ignores — the author puts it there, `studio init` from the
 public kit checks it — and the `studio` command reads it from there.
 `AGENTS.md` in the kit has the two steps and the prompt that starts the
-session, and `cli/README.md` beside it has the commands. This is the way for a coding session, for a script and for CI.
+session, and `cli/README.md` beside it has the commands. This is the way for a
+coding session, for a script and for CI.
 The routes are below and the CLI is a thin client over them.
 
 **As a connector, in a chat — the second way.** The studio runs an MCP server at
