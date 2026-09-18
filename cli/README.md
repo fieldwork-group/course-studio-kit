@@ -9,18 +9,21 @@ One file, `cli/studio.mjs`, with everything it needs inside it. Node 22 or
 newer, and nothing to install:
 
 ```bash
-npx --package github:fieldwork-group/course-studio-kit studio init     # in your course folder
-node /path/to/course-studio-kit/cli/studio.mjs status                  # a clone works the same
+node /path/to/course-studio-kit/cli/studio.mjs status                  # from a clone
+npx --package github:fieldwork-group/course-studio-kit studio status   # or without one
 ```
 
-`studio kit-path` prints the directory the kit ended up in, so an agent can
-find `AGENTS.md` and `docs/demos/format.md` without being told where they are.
+An author does not run it by hand: the two steps in the README put a token in
+a folder, and the agent started there runs `studio init` and everything after
+it. `studio kit-path` prints the directory the kit ended up in, so an agent
+that got `studio` through npx can find `AGENTS.md` and `docs/demos/format.md`
+without being told where they are.
 
 ## The folder
 
-`studio init` sets up the folder you are standing in: it asks for the access
-token you minted in the studio (*API access* in the account menu), checks it
-against the API, and writes
+`studio init` sets up the folder you are standing in: it takes the access
+token from the folder's `.env` or from `$STUDIO_TOKEN` — and asks for it when
+neither is set — checks it against the API, and writes
 
 ```
 .env                  STUDIO_TOKEN=…        mode 600, and never printed

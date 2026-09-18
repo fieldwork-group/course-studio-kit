@@ -61,10 +61,10 @@ refusal, not a cleanup: your content did not land.
 the studio's *API access* panel, sent as `Authorization: Bearer`. It is the way
 in that needs nobody's permission but the author's: they make it in a click,
 scope it to one course, and revoke it in another. On a machine it lives in a
-`.env` the folder ignores, written by `studio init` from the public kit, and
-the `studio` command reads it from there — `AGENTS.md` in the kit has the four
-steps and the prompt that starts the session, and `cli/README.md` beside it has
-the commands. This is the way for a coding session, for a script and for CI.
+`.env` the folder ignores — the author puts it there, `studio init` from the
+public kit checks it — and the `studio` command reads it from there.
+`AGENTS.md` in the kit has the two steps and the prompt that starts the
+session, and `cli/README.md` beside it has the commands. This is the way for a coding session, for a script and for CI.
 The routes are below and the CLI is a thin client over them.
 
 **As a connector, in a chat — the second way.** The studio runs an MCP server at

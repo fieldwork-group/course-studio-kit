@@ -5,7 +5,7 @@
  * copied in by the publisher's sync, which is exactly why it is worth a test on
  * this side: a truncated copy, a lost executable bit or a bundle that needs
  * something from `node_modules` would all look fine in a diff and fail on the
- * first machine that ran the four steps in the README.
+ * first machine an agent ran it on after the two steps in the README.
  *
  * Deliberately not tested here: anything that talks to the studio. That needs
  * an account and a token, it is covered where the command is built, and a test

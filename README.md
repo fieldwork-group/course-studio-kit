@@ -25,7 +25,7 @@ lecture:
 
 | If you are… | Read |
 |---|---|
-| **a lecturer with a studio account** who wants an AI to help write the course | [Work with an AI coding agent](#work-with-an-ai-coding-agent) — four steps, then paste the prompt |
+| **a lecturer with a studio account** who wants an AI to help write the course | [Work with an AI coding agent](#work-with-an-ai-coding-agent) — two steps, then paste the prompt |
 | **running the `studio` command** yourself | [`cli/README.md`](cli/README.md) |
 | **an agent** about to read or write a lecture | [`AGENTS.md`](AGENTS.md) first, then [`docs/api/openapi.yaml`](docs/api/openapi.yaml) and [`docs/api/vocabulary.md`](docs/api/vocabulary.md) |
 | **building a demo** — a figure that moves — for a course | [`docs/demos/format.md`](docs/demos/format.md), then copy [`demos/template/`](demos/template/) |
@@ -39,32 +39,38 @@ start with.
 
 ### Work with an AI coding agent
 
-1. **Make a folder** for your course on your machine. Empty is fine.
-2. **Get a token.** In the studio: account menu → *API access* → *New token*,
+Only the token needs you: it is minted in a signed-in browser session, and a
+token cannot mint another. Fetching this kit, installing Node, checking the
+token, pulling the course — that is shell work, and the agent does it.
+
+1. **Get a token.** In the studio: account menu → *API access* → *New token*,
    scoped to your course. It is shown once. A token is scoped to `read` ·
    `write` · `publish`, each separately, optionally to **one course**, and is
    revocable in one click. A token cannot mint or revoke tokens; that needs a
    signed-in session, so a leaked one cannot widen itself.
-3. **Set the folder up:**
+2. **Put it in a file.** Make a folder for the course — empty is fine — and
+   save a file named `.env` in it, holding one line:
 
-   ```bash
-   npx --package github:fieldwork-group/course-studio-kit studio init
+   ```
+   STUDIO_TOKEN=cst_…
    ```
 
-   (or clone this kit beside the folder and run
-   `node ../course-studio-kit/cli/studio.mjs init`). Paste the token when it
-   asks — it is never a flag, so it stays out of your shell history. It is
-   written to a local `.env` that the folder ignores; nothing else holds it.
-4. **Start a coding session in the folder** — Claude Code, or any agent with a
-   shell — and give it this as its first message:
+   Any text editor will do. Do not paste the token into the chat instead: a
+   message to an agent is kept in the session's log, and a file in the folder
+   stays on your disk.
 
-   > This folder is a course in the Fieldwork Course Studio. Read `AGENTS.md`
-   > from the kit first (`studio kit-path` prints where it is, or it is in
-   > `../course-studio-kit/`). The API token is in `.env` as `STUDIO_TOKEN`;
-   > the `studio` command reads it. Start with `studio status` and
-   > `studio pull <course>`, edit the files on disk, check your work as the kit
-   > describes, and `studio push` when I say so. Never publish, never print the
-   > token, and never commit `.env`.
+Then **start a coding session in the folder** — Claude Code, or any agent with
+a shell — and give it this as its first message:
+
+> This folder is a course in the Fieldwork Course Studio. The kit is
+> https://github.com/fieldwork-group/course-studio-kit: clone it beside this
+> folder if it is not there yet (it runs on Node 22 or newer; install Node
+> first if this machine has none) and read its `AGENTS.md`. `studio` below
+> means `node ../course-studio-kit/cli/studio.mjs`. The access token is
+> already in `.env` here as `STUDIO_TOKEN`; run `studio init` to check it and
+> set the folder up, then `studio status` and `studio pull <course>`. Edit the
+> files on disk, check your work as the kit describes, and `studio push` when
+> I say so. Never publish, never print the token, and never commit `.env`.
 
 `studio pull <course>` writes the whole course — the guides, the demos and
 every lecture — into `courses/<id>/`, in the same layout the studio's own
@@ -194,7 +200,7 @@ course without asking.
 
 ```
 README.md              this
-AGENTS.md              the four steps, the starting prompt, and the agent guide
+AGENTS.md              the two steps, the starting prompt, and the agent guide
 cli/                   studio.mjs — the `studio` command, one file · README.md
 LICENSE                MIT (code, demos) · docs/LICENSE  CC BY 4.0 (documents)
 docs/api/              openapi.yaml · agent-guide.md · vocabulary.md

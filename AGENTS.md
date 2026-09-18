@@ -1,6 +1,6 @@
 <!-- Generated from docs/api/coding-session.md and docs/api/agent-guide.md in the studio. Edits here are overwritten; file an issue instead. -->
 
-> **Read this first if you are an agent.** Below the four steps is the same text
+> **Read this first if you are an agent.** Below the two steps is the same text
 > the studio serves as the `studio://guide` resource, copied here so you can read
 > it before you connect. The other half of the kit is the demo format your
 > figures must meet: [`docs/demos/format.md`](docs/demos/format.md), built with
@@ -9,8 +9,8 @@
 
 # Work with an AI coding agent
 
-*The four steps that put a course on your own machine and hand it to a coding
-agent, and the prompt that starts the session.*
+*The two things only you can do, and the prompt that hands everything else to
+a coding agent.*
 
 A **token** is the way in, because you can mint one yourself: the studio's
 *API access* panel makes one in a click, scopes it to one course, and revokes
@@ -18,33 +18,39 @@ it in another. (The Claude connector is the other way in and needs a client id
 and secret from an administrator — Cognito has no dynamic client registration —
 so it is the second door, not the first.)
 
-1. **Make a folder** for your course on your machine. Empty is fine.
-2. **Get a token.** In the studio: account menu → *API access* → *New token*,
-   scoped to your course. It is shown once.
-3. **Set the folder up:**
+Only the token needs a person: it is minted in a signed-in browser session, and
+a token cannot mint another. Fetching the kit, installing Node, checking the
+token, pulling the course — that is shell work, and the agent does it.
 
-   ```bash
-   npx --package github:fieldwork-group/course-studio-kit studio init
+1. **Get a token.** In the studio: account menu → *API access* → *New token*,
+   scoped to your course. It is shown once.
+2. **Put it in a file.** Make a folder for the course — empty is fine — and
+   save a file named `.env` in it, holding one line:
+
+   ```
+   STUDIO_TOKEN=cst_…
    ```
 
-   (or clone the kit beside the folder and run
-   `node ../course-studio-kit/cli/studio.mjs init`). Paste the token when it
-   asks — it is never a flag, so it does not land in your shell history. It is
-   written to a local `.env` that the folder ignores; nothing else holds it.
-4. **Start a coding session in the folder** — Claude Code, or any agent with a
-   shell — and give it the starting prompt below.
+   Any text editor will do. Do not paste the token into the chat instead: a
+   message to an agent is kept in the session's log, and a file in the folder
+   stays on your disk.
+
+Then **start a coding session in the folder** — Claude Code, or any agent with
+a shell — and give it the starting prompt below.
 
 ## The starting prompt
 
 Paste this as the first message of the session:
 
-> This folder is a course in the Fieldwork Course Studio. Read `AGENTS.md` from
-> the kit first (`studio kit-path` prints where it is, or it is in
-> `../course-studio-kit/`). The API token is in `.env` as `STUDIO_TOKEN`; the
-> `studio` command reads it. Start with `studio status` and
-> `studio pull <course>`, edit the files on disk, check your work as the kit
-> describes, and `studio push` when I say so. Never publish, never print the
-> token, and never commit `.env`.
+> This folder is a course in the Fieldwork Course Studio. The kit is
+> https://github.com/fieldwork-group/course-studio-kit: clone it beside this
+> folder if it is not there yet (it runs on Node 22 or newer; install Node
+> first if this machine has none) and read its `AGENTS.md`. `studio` below
+> means `node ../course-studio-kit/cli/studio.mjs`. The access token is
+> already in `.env` here as `STUDIO_TOKEN`; run `studio init` to check it and
+> set the folder up, then `studio status` and `studio pull <course>`. Edit the
+> files on disk, check your work as the kit describes, and `studio push` when
+> I say so. Never publish, never print the token, and never commit `.env`.
 
 ## What the agent has
 
@@ -52,12 +58,13 @@ Everything in the kit, and the `studio` command:
 
 | | |
 |---|---|
+| `studio init` | checks the token in `.env` against the studio, records the origin and the courses it may touch, and makes sure git ignores both files |
 | `studio status` | who the token says you are, and every lecture's state |
 | `studio pull <course>` | the whole course into `courses/<id>/`, in this layout |
 | `studio push [<dir>]` | one lecture back, with the ETags the pull recorded |
 | `studio notes …` | the author-notes thread — where an agent asks rather than guesses |
 | `studio demos …` | the course's demos, three files each |
-| `studio kit-path` | where `AGENTS.md` and the demo format are on this machine |
+| `studio kit-path` | where `AGENTS.md` and the demo format are, if `studio` came through npx rather than a clone |
 
 `studio publish` exists and is deliberately not in the prompt: publishing is
 the author's call, and the prompt says so out loud because an agent that reads
@@ -126,10 +133,10 @@ refusal, not a cleanup: your content did not land.
 the studio's *API access* panel, sent as `Authorization: Bearer`. It is the way
 in that needs nobody's permission but the author's: they make it in a click,
 scope it to one course, and revoke it in another. On a machine it lives in a
-`.env` the folder ignores, written by `studio init` from the public kit, and
-the `studio` command reads it from there — `AGENTS.md` in the kit has the four
-steps and the prompt that starts the session, and `cli/README.md` beside it has
-the commands. This is the way for a coding session, for a script and for CI.
+`.env` the folder ignores — the author puts it there, `studio init` from the
+public kit checks it — and the `studio` command reads it from there.
+`AGENTS.md` in the kit has the two steps and the prompt that starts the
+session, and `cli/README.md` beside it has the commands. This is the way for a coding session, for a script and for CI.
 The routes are below and the CLI is a thin client over them.
 
 **As a connector, in a chat — the second way.** The studio runs an MCP server at

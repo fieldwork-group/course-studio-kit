@@ -19015,13 +19015,15 @@ var ENV_FILE2 = ".env";
 var ENV_KEY = "STUDIO_TOKEN";
 var CONFIG_FILE = path9.join(".studio", "config.json");
 var IGNORED = [".env", ".studio/"];
-var STARTING_PROMPT = `This folder is a course in the Fieldwork Course Studio. Read \`AGENTS.md\` from
-the kit first (\`studio kit-path\` prints where it is, or it is in
-\`../course-studio-kit/\`). The API token is in \`.env\` as \`STUDIO_TOKEN\`; the
-\`studio\` command reads it. Start with \`studio status\` and
-\`studio pull <course>\`, edit the files on disk, check your work as the kit
-describes, and \`studio push\` when I say so. Never publish, never print the
-token, and never commit \`.env\`.`;
+var STARTING_PROMPT = `This folder is a course in the Fieldwork Course Studio. The kit is
+https://github.com/fieldwork-group/course-studio-kit: clone it beside this
+folder if it is not there yet (it runs on Node 22 or newer; install Node
+first if this machine has none) and read its \`AGENTS.md\`. \`studio\` below
+means \`node ../course-studio-kit/cli/studio.mjs\`. The access token is
+already in \`.env\` here as \`STUDIO_TOKEN\`; run \`studio init\` to check it and
+set the folder up, then \`studio status\` and \`studio pull <course>\`. Edit the
+files on disk, check your work as the kit describes, and \`studio push\` when
+I say so. Never publish, never print the token, and never commit \`.env\`.`;
 function trackedByGit(dir, file) {
   try {
     execFileSync("git", ["-C", dir, "ls-files", "--error-unmatch", "--", file], {
@@ -19138,9 +19140,11 @@ ${hint}`);
   log("");
   log("next:");
   log(`  studio pull ${courses.length === 1 ? courses[0] : "<course>"}`);
-  log("  then start a coding session in this folder and paste this as its first message:");
-  log("");
-  for (const line of STARTING_PROMPT.split("\n")) log(`    ${line}`);
+  if (!fromEnv) {
+    log("  then start a coding session in this folder and paste this as its first message:");
+    log("");
+    for (const line of STARTING_PROMPT.split("\n")) log(`    ${line}`);
+  }
   return { dir: root, config, ignoreAdded: ignore.added };
 }
 
