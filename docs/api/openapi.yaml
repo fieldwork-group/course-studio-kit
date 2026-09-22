@@ -69,12 +69,19 @@ tags:
     description: The documents, their history and their assets.
   - name: exercises
     description: A sheet of questions, its private key, and what each question is worth.
+  - name: grading
+    description: Submissions, the review of one, the release and the gradebook. An author's.
   - name: publish
     description: Draft to student-visible page.
   - name: threads
     description: Author notes on a block.
   - name: dev
     description: The local stand-ins for presigned S3 URLs. Not deployed.
+  - name: workspace
+    description: |
+      A student's own surface — their submissions and their released grades.
+      Everything under `/courses/{c}/me/`, and the whole of what a `students`
+      session may reach.
   - name: public
     description: What a visitor with no account may read.
 
@@ -1909,6 +1916,326 @@ paths:
         '403': { $ref: '#/components/responses/forbidden' }
         '404': { $ref: '#/components/responses/notFound' }
 
+  /courses/{c}/exercises/{x}/submissions:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+    get:
+      tags: [grading]
+      operationId: listSubmissions
+      summary: One row per student on the roster, with the review's summary.
+      description: |
+        The grading list: every student on the roster, whether they have
+        submitted, and what state their review is in — `drafts`, `accepted`,
+        the questions that carry an accepted mark, and their total. So *the
+        next unscored submission* is one call away, for a person or for a
+        model, with no other state to hold.
+
+        Sorted **submitted first, then by address**. The course's **test
+        student** is one more row, last, with `test: true`, and only when it
+        has a submission; it is outside `counts`, the release check, the
+        gradebook and the CSV — everything that walks this list means the
+        class.
+
+        **An author of the course.** A `viewer` gets `403 course_read_only`: a
+        class's handwriting, their marks and the roster's addresses beside them
+        are not a thing a reader of the drafts is handed.
+      responses:
+        '200':
+          description: The list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  course: { type: string }
+                  exercise: { type: object }
+                  counts: { $ref: '#/components/schemas/GradingCounts' }
+                  rows:
+                    type: array
+                    items: { $ref: '#/components/schemas/SubmissionRow' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/exercises/{x}/submissions/{sid}:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+      - $ref: '#/components/parameters/sid'
+    get:
+      tags: [grading]
+      operationId: getSubmission
+      summary: One submission and everything the grading screen draws.
+      description: |
+        **One call is one screen**: the student's typed answers as notes
+        fragments, their pages as URLs this API serves, the review, and the
+        exercise's questions with the key's sections **aligned by order**
+        (the key carries no question ids of its own). A second round trip per
+        question would be a page that fills in piece by piece while somebody is
+        reading a derivation.
+
+        The `sid` is a path parameter an author names, and it is checked
+        against the course's roster — or the course's test student — before a
+        key is composed: a `sid` that is on neither is a `404`.
+      responses:
+        '200':
+          description: The submission.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GradingScreen' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/exercises/{x}/submissions/{sid}/pages/{q}/{n}:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+      - $ref: '#/components/parameters/sid'
+      - $ref: '#/components/parameters/question'
+      - name: n
+        in: path
+        required: true
+        description: the page number within the question, as the submission indexes it
+        schema: { type: integer, minimum: 1 }
+    get:
+      tags: [grading]
+      operationId: getSubmissionPage
+      summary: One photographed or scanned page, as bytes.
+      description: |
+        JPEG or PNG, `cache-control: no-store`. Through the API rather than as a
+        presigned GET: a page is a few hundred kilobytes, and the roster check
+        then happens on **every** page request rather than once, when a link was
+        handed out.
+      responses:
+        '200':
+          description: The image.
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/exercises/{x}/submissions/{sid}/review:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+      - $ref: '#/components/parameters/sid'
+      - $ref: '#/components/parameters/ifMatchOptional'
+    put:
+      tags: [grading]
+      operationId: putReview
+      summary: Write items and scores. Upsert by item id.
+      description: |
+        `{ items?: [...], scores?: {...} }`. An item with an `id` that is
+        already there is updated in place and keeps its `created`; one with no
+        `id` is a new item with a ULID of its own. A score is a number, `null`
+        to unmark, or `{ points }` — which is what `GET …/submissions/{sid}`
+        hands back, so a client may send back what it was given.
+
+        **The state is the route's and never the caller's.** Everything written
+        by a request whose identity is an access token or the MCP connector is
+        stored `state: 'draft'`, *whatever the body says*; a signed-in
+        session's own write is `accepted`. There is no parameter that asks for
+        `accepted`, and there must never be one: the lecturer's own Claude may
+        write as much as it likes and nothing it writes is a grade until a
+        person accepts it here or in the workspace.
+
+        `If-Match` on `review.json` when the caller holds one; a `412` is the
+        lecturer being told their own agent wrote while the page was open.
+        Event `review.save`. When the exercise's grades are already released,
+        `gradebook.json` is rebuilt by the same call.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/ReviewItem' }
+                scores:
+                  type: object
+                  additionalProperties: true
+                  description: '`{ "<question id>": number | null | { points } }`'
+      responses:
+        '200':
+          description: The whole review, as stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  review: { $ref: '#/components/schemas/Review' }
+                  etag: { type: string }
+        '400': { $ref: '#/components/responses/invalidDocument' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '412': { $ref: '#/components/responses/precondition' }
+        '409': { $ref: '#/components/responses/busy' }
+
+  /courses/{c}/exercises/{x}/submissions/{sid}/review/items/{id}:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+      - $ref: '#/components/parameters/sid'
+      - name: id
+        in: path
+        required: true
+        description: the review item's id
+        schema: { type: string }
+    delete:
+      tags: [grading]
+      operationId: deleteReviewItem
+      summary: Discard one item.
+      description: |
+        A mark is not discardable the same way: it is unset by writing `null`
+        to it, which keeps who unset it and when. Event `review.save`.
+      responses:
+        '204': { description: Discarded. }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/exercises/{x}/submissions/{sid}/review/accept:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+      - $ref: '#/components/parameters/sid'
+    post:
+      tags: [grading]
+      operationId: acceptReview
+      summary: Accept drafts — the moment a thing an agent wrote becomes a grade.
+      description: |
+        `{ items?: [ids] | "all", scores?: [qids] | "all" }`; an **empty body
+        accepts everything**, which is what the button at the top of the page
+        does. Its own action in the log (`review.accept`) because a disputed
+        mark is argued over exactly this line.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items: { description: 'item ids, or "all"' }
+                scores: { description: 'question ids, or "all"' }
+      responses:
+        '200':
+          description: The review, and how many drafts moved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  review: { $ref: '#/components/schemas/Review' }
+                  etag: { type: string }
+                  accepted: { type: integer }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/exercises/{x}/release:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+    post:
+      tags: [grading]
+      operationId: releaseGrades
+      summary: Release the grades, and rebuild the gradebook.
+      description: |
+        Stamps `grades.released` on the exercise; from then on an accepted
+        change is visible to students at once. **Refused with `409
+        grades_not_ready`** while a question carries no points, or while a
+        student on the roster has no accepted mark for a question that does —
+        the body names them, so the studio can show the list — unless the body
+        says `{ "force": true }`, in which case those students simply read *not
+        graded*.
+
+        The test student is not checked: it is the lecturer's own dry run.
+        Event `exercise.release`.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force: { type: boolean, description: release although somebody is unmarked }
+      responses:
+        '200':
+          description: Released.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exercise: { $ref: '#/components/schemas/Exercise' }
+                  etag: { type: string }
+                  gradebook: { $ref: '#/components/schemas/Gradebook' }
+                  forced: { type: boolean }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409':
+          description: '`grades_not_ready`, naming the students and the unpriced questions.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  message: { type: string }
+                  students:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        sid: { type: string }
+                        email: { type: [string, 'null'] }
+                        missing: { type: array, items: { type: string } }
+                  unpriced: { type: array, items: { type: string } }
+
+  /courses/{c}/gradebook:
+    parameters:
+      - $ref: '#/components/parameters/course'
+    get:
+      tags: [grading]
+      operationId: getGradebook
+      summary: Students × released exercises, with the course totals.
+      description: |
+        Derived from every review of the course and rebuilt on the way out, so
+        the grid a lecturer is looking at is true; the stored `gradebook.json`
+        is written by the same call and is what a later export reads. The test
+        student is not in it, and neither is an exercise whose grades have not
+        been released. **An author of the course.**
+      responses:
+        '200':
+          description: The gradebook.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Gradebook' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/gradebook.csv:
+    parameters:
+      - $ref: '#/components/parameters/course'
+    get:
+      tags: [grading]
+      operationId: getGradebookCsv
+      summary: The same, as CSV — email, sid, one column per released exercise, total.
+      description: |
+        UTF-8 **with a byte-order mark**, because Excel on Windows reads a
+        UTF-8 file without one as the system code page and renders a Hebrew
+        exercise title as mojibake. `content-disposition: attachment`.
+      responses:
+        '200':
+          description: The CSV.
+          content:
+            text/csv:
+              schema: { type: string }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
   /courses/{c}/members:
     parameters:
       - $ref: '#/components/parameters/course'
@@ -2077,6 +2404,341 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+
+  # ------------------------------------------------------------------------
+  # The student workspace (plan 03, 2026-09-22). Everything under
+  # `/courses/{c}/me/` and nothing else is what a `students` session may
+  # reach; the gate resolves the student id from the caller's own access
+  # record, or — for an author of the course — from the course's test
+  # student, which is why no route here has a `{sid}` in it.
+  # ------------------------------------------------------------------------
+
+  /courses/{c}/me:
+    parameters:
+      - $ref: '#/components/parameters/course'
+    get:
+      tags: [workspace]
+      operationId: getMyCourse
+      summary: The student's landing for one course — its weeks, its lectures and its exercises.
+      description: |
+        What a signed-in student on this course's roster sees: the course's
+        identity, and its weeks. Each week carries its **lectures** — with the
+        published URL on the site when there is one, and no `url` at all when
+        there is not — and its **exercises**, each with what it is worth, its
+        dates and *this student's* state on it: `not_started`, `draft`,
+        `submitted`, or `graded` with the released total.
+
+        **An exercise whose `release.from` is in the future is absent**, not
+        listed as locked: a sheet a student cannot open is a sheet whose title
+        is none of their business yet.
+
+        The one exception is the course's **test student** — an author's own
+        `/me/`. It sees those exercises with `notYetOpen: true`, so a lecturer
+        can read what the class cannot yet, and `testStudent: true` on the
+        answer is what the workspace draws its banner on.
+
+        Grouping is `byWeek` from `@studio/schema`, the same function the
+        studio's course page and the published lecture list use.
+      responses:
+        '200':
+          description: The landing.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudentLanding' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/me/exercises/{x}:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+    get:
+      tags: [workspace]
+      operationId: getMyExercise
+      summary: One exercise as the student sees it, with their own submission.
+      description: |
+        The manifest as a student may read it, `questions.html`, this student's
+        `submission.json` and the text of each typed answer — and, **only once
+        `grades.released` is set on the exercise**, the `accepted` items and
+        scores of `review.json`.
+
+        Three absences are the point, and each is absent from the JSON rather
+        than hidden by the page:
+
+        - **`key.html` is never here.** This file never reads that key.
+        - **A `draft` review item or score is never here**, whatever the
+          release state: a draft is a model's suggestion or an unfinished
+          sentence, and `via` and `author` are dropped with it.
+        - **Nothing of a review is here before release.**
+
+        `404` before `release.from`, for the reason the landing omits it — a
+        `403` would confirm there is something to wait for. The test student is
+        served it, with `notYetOpen: true`.
+
+        `etag` is what every write to this submission sends back as `If-Match`;
+        `null` means nothing has been written yet and the first write should
+        send `If-None-Match: *`.
+      responses:
+        '200':
+          description: The exercise, the submission, and the released review if there is one.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudentExercise' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/me/exercises/{x}/parts/{q}/answer:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+      - $ref: '#/components/parameters/question'
+      - $ref: '#/components/parameters/ifMatch'
+      - $ref: '#/components/parameters/ifNoneMatch'
+    put:
+      tags: [workspace]
+      operationId: putMyAnswer
+      summary: The typed answer to one question, as a notes fragment.
+      description: |
+        The body is HTML in the notes vocabulary and is normalised through
+        `@studio/schema` like every other document in this store, so what is
+        saved is what the schema emits. An **empty body clears** the typed
+        answer — which is a real thing a student does, unlike a lecture save,
+        where an empty document would be the page wiped.
+
+        `If-Match` is the ETag of `submission.json`, not of this fragment: one
+        token for the whole submission is what lets the workspace explain a
+        second tab. `If-None-Match: *` on the first write of all.
+
+        Refused with `409 closed` after the due date unless the exercise's
+        `release.late` is `accept`, in which case the write lands and the
+        submission is flagged `late`. Event `submission.save`, whose summary
+        says the question and the kind (`s2: typed · 2 pages`) and never a
+        character of the answer.
+      requestBody:
+        required: true
+        content:
+          text/html:
+            schema: { type: string }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  submission: { $ref: '#/components/schemas/Submission' }
+                  etag: { type: string }
+                  versionId: { type: [string, 'null'] }
+                  bytes: { type: integer }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409':
+          description: '`closed` — past the due date, and the lecturer takes no late work.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '412': { $ref: '#/components/responses/precondition' }
+        '413': { $ref: '#/components/responses/tooLarge' }
+        '422': { $ref: '#/components/responses/unsafeMarkup' }
+
+  /courses/{c}/me/exercises/{x}/parts/{q}/pages:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+      - $ref: '#/components/parameters/question'
+      - $ref: '#/components/parameters/ifMatch'
+      - $ref: '#/components/parameters/ifNoneMatch'
+    post:
+      tags: [workspace]
+      operationId: presignMyPage
+      summary: A presigned target for one photographed or scanned page.
+      description: |
+        The presign discipline of `POST …/lectures/{l}/uploads`, with the
+        students' own allow-list: **JPEG and PNG, 10 MB**, and a key under
+        `parts/{q}/pages/`. The browser downscales to 2000 px on the long edge
+        and re-encodes as JPEG before it asks, so a phone photograph arrives at
+        about half a megabyte.
+
+        **The page's number and file name are the route's**, minted one past
+        the highest the question currently holds; a client sends the type, the
+        size and the measurements and does not choose where its bytes go. At
+        most 20 pages a question (`409 too_many_pages`).
+
+        The entry is written when the target is handed out, not when the bytes
+        land — with S3 the bytes never touch the API, so the presign is the
+        last moment it knows anything. Event `submission.save`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, size]
+              properties:
+                type: { type: string, enum: [image/jpeg, image/png] }
+                size: { type: integer, description: the size of the downscaled file, in bytes }
+                w: { type: [number, 'null'], description: pixel width after downscaling }
+                h: { type: [number, 'null'], description: pixel height after downscaling }
+      responses:
+        '200':
+          description: Where to post the bytes, and the entry that now records the page.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  page: { $ref: '#/components/schemas/SubmissionPage' }
+                  url: { type: string }
+                  fields: { type: object }
+                  maxBytes: { type: integer }
+                  contentType: { type: string }
+                  submission: { $ref: '#/components/schemas/Submission' }
+                  etag: { type: string }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409':
+          description: '`too_many_pages`, or `closed` past the due date.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '412': { $ref: '#/components/responses/precondition' }
+    put:
+      tags: [workspace]
+      operationId: reorderMyPages
+      summary: The pages of one question, in the order the student wants them.
+      description: |
+        The **array is the order** and `n` is each page's own identity and file
+        stem, so *move up* and *move down* rewrite this list and move no bytes.
+        The body must be exactly the numbers this question already has, once
+        each: a reorder can neither add a page nor lose one
+        (`400 invalid_order`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order]
+              properties:
+                order:
+                  type: array
+                  items: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Reordered.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  submission: { $ref: '#/components/schemas/Submission' }
+                  etag: { type: string }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409':
+          description: '`closed` — past the due date, and the lecturer takes no late work.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '412': { $ref: '#/components/responses/precondition' }
+
+  /courses/{c}/me/exercises/{x}/parts/{q}/pages/{n}:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+      - $ref: '#/components/parameters/question'
+      - $ref: '#/components/parameters/pageNumber'
+    get:
+      tags: [workspace]
+      operationId: getMyPage
+      summary: One page's bytes.
+      description: |
+        Through the API, like a draft figure and for the same reason: an
+        `<img src>` cannot carry a bearer token, so the SPA fetches the bytes
+        with one and hands the element an object URL. A presigned GET would put
+        a URL that works with no session into a page, and a student's
+        handwriting is not something to hand out on a link —
+        `cache-control: private, no-cache` says the same thing to every proxy
+        in between.
+      responses:
+        '200':
+          description: The image.
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+    delete:
+      tags: [workspace]
+      operationId: deleteMyPage
+      summary: Remove one page — the entry and the bytes.
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      description: |
+        The entry first and the bytes second, which is the opposite order to a
+        write and for the same reason: an object nothing points at is litter,
+        while a pointer to bytes that are gone is a broken image on the grading
+        page. The number is never reused, so a cached thumbnail cannot come
+        back as the next page. Event `submission.save`.
+      responses:
+        '204':
+          description: Removed. The `ETag` header is the submission's new one.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409':
+          description: '`closed` — past the due date, and the lecturer takes no late work.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '412': { $ref: '#/components/responses/precondition' }
+
+  /courses/{c}/me/exercises/{x}/submit:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+      - $ref: '#/components/parameters/ifMatch'
+    post:
+      tags: [workspace]
+      operationId: submitMyExercise
+      summary: Hand the exercise in.
+      description: |
+        Sets `state: submitted` and `submittedAt`, and computes `late` against
+        the exercise's due date. **A second submit before the due date
+        replaces the first** — the store keeps the version, so nothing is lost
+        and the lecturer sees the latest. After the due date it is a
+        `409 closed` unless `release.late` is `accept`, in which case it lands
+        and `late` is set for good: a submission that was late once does not
+        stop having been.
+
+        `404` when there is nothing to submit yet. Event `submission.submit`,
+        whose summary says how many questions were answered and never what was
+        written.
+      responses:
+        '200':
+          description: Submitted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  submission: { $ref: '#/components/schemas/Submission' }
+                  etag: { type: string }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409':
+          description: '`closed` — past the due date, and the lecturer takes no late work.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '412': { $ref: '#/components/responses/precondition' }
 
   /courses/{c}/demos:
     get:
@@ -2497,6 +3159,31 @@ components:
       required: true
       description: the exercise id, generated when the exercise is opened
       schema: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' }
+    sid:
+      name: sid
+      in: path
+      required: true
+      description: |
+        a student's generated id, eight characters of lower-cased Crockford
+        base32. The one place a student id arrives from a request: the grading
+        routes check it against the course's roster before composing a key, and
+        a `sid` on no roster is a 404. No route under `/courses/{c}/me/` has one
+      schema: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' }
+    question:
+      name: q
+      in: path
+      required: true
+      description: a question's id — the `data-id` of its section in `questions.html`
+      schema: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' }
+    pageNumber:
+      name: n
+      in: path
+      required: true
+      description: |
+        A page's number: its identity and its file stem, minted by the route
+        and never reused. It is not the page's position — the `pages` array's
+        order is that.
+      schema: { type: integer, minimum: 1 }
     guideName:
       name: name
       in: path
@@ -2659,6 +3346,201 @@ components:
             created: { type: [string, 'null'], format: date-time }
             by: { type: [string, 'null'] }
         updated: { type: [string, 'null'], format: date-time }
+
+    SubmissionPage:
+      type: object
+      description: One uploaded page of a handwritten answer.
+      required: [n, key]
+      properties:
+        n:
+          type: integer
+          minimum: 1
+          description: |
+            The page's own number — its identity and its file stem, minted by
+            the route and never reused. **Not its position**: the order of the
+            `pages` array is that.
+        key: { type: string, description: the store key the bytes are under }
+        w: { type: [number, 'null'], description: pixel width after the browser downscaled it }
+        h: { type: [number, 'null'], description: pixel height after the browser downscaled it }
+        bytes: { type: [number, 'null'] }
+
+    Submission:
+      type: object
+      description: |
+        `submission.json` — one student's answer to one exercise. The typed
+        answers and the page images are their own objects; this is the index
+        over them, and the one object every write here is `If-Match` on.
+      required: [exercise, student]
+      properties:
+        exercise: { type: string }
+        student:
+          type: string
+          description: |
+            The student's generated `sid`, resolved by the gate from the
+            caller's own access record — never from a request parameter, and
+            never an email.
+        state: { type: string, enum: [draft, submitted] }
+        submittedAt: { type: [string, 'null'], format: date-time }
+        late:
+          type: boolean
+          description: |
+            Taken after the due date under `release.late: accept`. Set for
+            good: a submission that was late once does not stop having been.
+        parts:
+          type: object
+          description: One entry per question that has anything in it, keyed by the question id.
+          additionalProperties:
+            type: object
+            properties:
+              typed: { type: boolean, description: is there a `parts/<q>/answer.html` with something in it }
+              pages:
+                type: array
+                items: { $ref: '#/components/schemas/SubmissionPage' }
+        updated: { type: [string, 'null'], format: date-time }
+
+    StudentReview:
+      type: object
+      description: |
+        The half of `review.json` a student is served: **accepted items and
+        accepted scores, and only once `grades.released` is set**. A `draft`
+        item or score is absent from the JSON, not hidden by the page, and
+        `author` and `via` are dropped — who suggested a comment, and through
+        which door, is the course's audit trail and not the student's business.
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: [string, 'null'] }
+              question: { type: [string, 'null'] }
+              target:
+                type: [object, 'null']
+                description: '`text` (a block id and a quote), `page` (a page and a rectangle), or `question`.'
+              body: { type: string }
+              points: { type: [number, 'null'], description: a delta the lecturer may have used or ignored }
+        scores:
+          type: object
+          description: The number that counts, per question.
+          additionalProperties:
+            type: object
+            properties:
+              points: { type: [number, 'null'] }
+        total: { type: [number, 'null'], description: the sum of the accepted scores }
+
+    StudentLanding:
+      type: object
+      required: [course, weeks]
+      properties:
+        course:
+          type: object
+          properties:
+            id: { type: string }
+            title: { type: string }
+            titleEn: { type: [string, 'null'] }
+            term: { type: [string, 'null'] }
+            lang: { type: string, enum: [he, en] }
+            dir: { type: string, enum: [rtl, ltr] }
+            address: { type: [string, 'null'] }
+        site: { type: string, description: the origin the published lectures are served from }
+        testStudent:
+          type: boolean
+          description: |
+            True when the caller is an author of the course, whose own `/me/`
+            **is** the course's test student. The workspace draws a banner on
+            it.
+        weeks:
+          type: array
+          description: Weeks ascending, the undated last — `byWeek` from `@studio/schema`.
+          items:
+            type: object
+            properties:
+              week: { type: [integer, 'null'] }
+              lectures:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    number: { type: [integer, 'null'] }
+                    title: { type: string }
+                    week: { type: [integer, 'null'] }
+                    url:
+                      type: string
+                      description: |
+                        The published page on the site. **Absent** when the
+                        lecture has never been published — a link that 404s is
+                        worse than a line that says nothing.
+              exercises:
+                type: array
+                items: { $ref: '#/components/schemas/StudentExerciseRow' }
+
+    StudentExerciseRow:
+      type: object
+      description: One exercise on the landing, with this student's own state on it.
+      properties:
+        id: { type: string }
+        title: { type: string }
+        week: { type: [integer, 'null'] }
+        points: { type: number, description: the sum of the priced questions }
+        questions:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              points: { type: [number, 'null'] }
+        release:
+          type: object
+          properties:
+            from: { type: [string, 'null'], format: date-time }
+            due: { type: [string, 'null'], format: date-time }
+            late: { type: string, enum: [accept, refuse] }
+        released: { type: [string, 'null'], description: when the grades were released, or null }
+        state:
+          type: string
+          enum: [not_started, draft, submitted, graded]
+        score: { type: [number, 'null'], description: the released total; null until `graded` }
+        late: { type: boolean }
+        submittedAt: { type: [string, 'null'], format: date-time }
+        notYetOpen:
+          type: boolean
+          description: |
+            Present only for the **test student**, on an exercise whose
+            `release.from` is still in the future. A real student does not see
+            such an exercise at all.
+
+    StudentExercise:
+      type: object
+      required: [exercise, questions, submission]
+      properties:
+        course:
+          type: object
+          properties:
+            id: { type: string }
+            title: { type: string }
+            lang: { type: string, enum: [he, en] }
+            dir: { type: string, enum: [rtl, ltr] }
+        exercise: { $ref: '#/components/schemas/StudentExerciseRow' }
+        questions: { type: string, description: '`questions.html` — a notes fragment. Never `key.html`.' }
+        submission: { $ref: '#/components/schemas/Submission' }
+        answers:
+          type: object
+          description: The typed answer per question, as the stored fragment.
+          additionalProperties: { type: string }
+        review:
+          oneOf:
+            - $ref: '#/components/schemas/StudentReview'
+            - type: 'null'
+          description: Null until `grades.released` is set on the exercise.
+        etag:
+          type: [string, 'null']
+          description: |
+            The ETag of `submission.json`, which every write here sends back as
+            `If-Match`. Null means nothing has been written yet and the first
+            write should send `If-None-Match: *`.
+        testStudent: { type: boolean }
+        notYetOpen: { type: boolean }
 
     ReaderPassword:
       type: object
@@ -2970,6 +3852,187 @@ components:
             released: { type: [string, 'null'], format: date-time }
         created: { type: [string, 'null'], readOnly: true }
         by: { type: [string, 'null'], readOnly: true }
+
+    ReviewTarget:
+      type: object
+      description: |
+        Where a review item points. Three kinds: `text` (a block id and the
+        sentence — the author-notes anchor), `page` (a page number and a
+        rectangle in **normalised** coordinates, `[x, y, w, h]`, each 0 to 1)
+        and `question` (the whole question). A rectangle is normalised because
+        the only stable thing about a scanned page is its own geometry.
+      properties:
+        kind: { type: string, enum: [text, page, question] }
+        block: { type: string, description: 'text: the data-id of the block in the typed answer' }
+        quote: { type: [string, 'null'], description: 'text: the sentence' }
+        page: { type: integer, minimum: 1, description: 'page: the page number' }
+        rect:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: { type: number, minimum: 0, maximum: 1 }
+          description: 'page: [x, y, w, h] as fractions of the page'
+
+    ReviewVia:
+      type: [object, 'null']
+      description: |
+        The door the write came through, in the event log's own shape: `null`
+        for a session, `{ token, label }` for an access token, `{ connector }`
+        for the MCP door. **The route fills it from the identity**, and it is
+        what decides `state`.
+      properties:
+        token: { type: [string, 'null'] }
+        label: { type: [string, 'null'] }
+        connector: { type: [string, 'null'] }
+
+    ReviewItem:
+      type: object
+      description: |
+        One remark on one question. `points` is a **delta** the lecturer may use
+        or ignore; the number that counts is in `scores`.
+      properties:
+        id: { type: string, description: 'a ULID; omit it to write a new item, send it to update one' }
+        question: { type: string }
+        target: { $ref: '#/components/schemas/ReviewTarget' }
+        body: { type: string, maxLength: 4000 }
+        points: { type: [number, 'null'] }
+        author: { type: [string, 'null'], readOnly: true }
+        via: { $ref: '#/components/schemas/ReviewVia' }
+        state:
+          type: string
+          enum: [draft, accepted]
+          readOnly: true
+          description: set by the route from the door, never by the writer
+        created: { type: [string, 'null'], readOnly: true }
+        updated: { type: [string, 'null'], readOnly: true }
+
+    ReviewScore:
+      type: object
+      description: The mark for one question; the total is the sum of the accepted ones.
+      properties:
+        points: { type: [number, 'null'], minimum: 0 }
+        author: { type: [string, 'null'] }
+        via: { $ref: '#/components/schemas/ReviewVia' }
+        state: { type: string, enum: [draft, accepted] }
+        updated: { type: [string, 'null'] }
+
+    Review:
+      type: object
+      description: '`review.json` — the items and the marks for one submission.'
+      properties:
+        exercise: { type: string }
+        student: { type: string, description: 'the sid; no field under `students/` carries an address' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ReviewItem' }
+        scores:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/ReviewScore' }
+        updated: { type: [string, 'null'] }
+
+    ReviewSummary:
+      type: object
+      description: What a client needs to pick the next submission to mark.
+      properties:
+        drafts: { type: integer }
+        accepted: { type: integer }
+        scored: { type: array, items: { type: string }, description: questions carrying an accepted mark }
+        total: { type: [number, 'null'] }
+
+    SubmissionRow:
+      type: object
+      properties:
+        sid: { type: string }
+        email: { type: [string, 'null'], description: 'null on the test student, which is not a person' }
+        test: { type: boolean, description: present and true on the course's test student }
+        state: { type: string, enum: [not_submitted, draft, submitted, late] }
+        submittedAt: { type: [string, 'null'], format: date-time }
+        review: { $ref: '#/components/schemas/ReviewSummary' }
+
+    GradingCounts:
+      type: object
+      description: The header's numbers. The test student is in none of them.
+      properties:
+        students: { type: integer }
+        submitted: { type: integer }
+        late: { type: integer }
+        notSubmitted: { type: integer }
+        graded: { type: integer }
+        drafts: { type: integer }
+
+    GradingScreen:
+      type: object
+      description: One submission, and everything the grading page draws.
+      properties:
+        course: { type: object }
+        exercise: { type: object }
+        student:
+          type: object
+          properties:
+            sid: { type: string }
+            email: { type: [string, 'null'] }
+            test: { type: boolean }
+        state: { type: string, enum: [not_submitted, draft, submitted, late] }
+        submittedAt: { type: [string, 'null'], format: date-time }
+        late: { type: boolean }
+        questions:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: [string, 'null'] }
+              points: { type: [number, 'null'] }
+              question: { type: string, description: the question's section, as stored }
+              key: { type: [string, 'null'], description: the key's section, aligned by order }
+              answer: { type: [string, 'null'], description: the typed answer, a notes fragment }
+              pages:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    n: { type: integer }
+                    w: { type: [integer, 'null'] }
+                    h: { type: [integer, 'null'] }
+                    bytes: { type: [integer, 'null'] }
+                    url: { type: string, description: a path on this API, not a store key }
+        review: { $ref: '#/components/schemas/Review' }
+        etag: { type: [string, 'null'] }
+
+    Gradebook:
+      type: object
+      description: |
+        `gradebook.json` — derived, rebuilt on release and on any accepted
+        change after it, and disposable. The test student is not in it.
+      properties:
+        course: { type: string }
+        exercises:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
+              week: { type: [integer, 'null'] }
+              points: { type: number }
+              released: { type: string, format: date-time }
+        students:
+          type: array
+          items:
+            type: object
+            properties:
+              sid: { type: string }
+              email: { type: string }
+              exercises:
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    state: { type: string, enum: [not_submitted, draft, submitted, late, graded] }
+                    total: { type: [number, 'null'] }
+              total: { type: number }
+        points: { type: number }
+        updated: { type: string, format: date-time }
 
     SaveResult:
       type: object

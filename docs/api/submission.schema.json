@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://studio.fieldwork-group.com/schema/submission.schema.json",
+  "title": "submission.json",
+  "description": "One student's answer to one exercise: which questions have a typed answer, which have pages, and whether it has been submitted. The answers themselves are `parts/<q>/answer.html` and `parts/<q>/pages/<n>.jpg`; the review of it is `review.json` and is never a student's to write.",
+  "type": "object",
+  "required": [
+    "exercise",
+    "student"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "exercise": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$",
+      "description": "the exercise this answers; the server writes it from the path"
+    },
+    "student": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$",
+      "description": "the student's generated `sid`, resolved by the gate from the caller's own access record — never from a request parameter, and never an email"
+    },
+    "state": {
+      "enum": [
+        "draft",
+        "submitted"
+      ],
+      "description": "`draft` while the student is working; `submitted` once they have handed it in. A second submit before the due date replaces the first"
+    },
+    "submittedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "when it was last submitted; null while it is a draft"
+    },
+    "late": {
+      "type": "boolean",
+      "description": "was the submission taken after `release.due`; the route computes it and the lecturer sees it on the row"
+    },
+    "parts": {
+      "type": "object",
+      "description": "one entry per question that has anything in it, keyed by the question's id (the `data-id` of its section in questions.html)",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/submissionPart"
+      }
+    },
+    "updated": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "the last write of any kind"
+    }
+  },
+  "$defs": {
+    "submissionPage": {
+      "type": "object",
+      "description": "one uploaded page: its place in the question, where its bytes are, and how big it is",
+      "required": [
+        "n",
+        "key"
+      ],
+      "properties": {
+        "n": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "the page's place in this question, from 1"
+        },
+        "key": {
+          "type": "string",
+          "description": "the store key the bytes are under; written by the route, never by a client"
+        },
+        "w": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "pixel width after the browser downscaled it"
+        },
+        "h": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "pixel height after the browser downscaled it"
+        },
+        "bytes": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "the size of the stored image"
+        }
+      },
+      "additionalProperties": false
+    },
+    "submissionPart": {
+      "type": "object",
+      "description": "one question's answer: a typed fragment beside it, and the uploaded pages",
+      "properties": {
+        "typed": {
+          "type": "boolean",
+          "description": "is there a `parts/<q>/answer.html` with something in it"
+        },
+        "pages": {
+          "type": "array",
+          "description": "the uploaded pages in the order the student put them, at most 20",
+          "items": {
+            "$ref": "#/$defs/submissionPage"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -353,6 +353,78 @@ are unsure about, quote the sentence, and say what you would do.
 Every error is `{ error, message, … }`. `error` is stable and worth branching
 on; `message` is a sentence for a person.
 
+## Grading
+
+A course may set **exercises**, and a class submits against them. If the
+lecturer asks you to help mark, this is the loop — and the first thing to
+understand about it is that **you are not awarding grades.**
+
+> Everything you write into a review is stored as a **draft**. The route
+> decides that from the door you came through, not from anything you send, so
+> there is no way to write an accepted mark and no reason to try. A person
+> reads every line before any student does.
+
+That is a licence, not a limitation. Say what you actually think, show your
+reasoning, and let the lecturer keep, edit or throw away each line.
+
+```
+studio_submissions { course, exercise, action: "list" }
+    → rows: [{ sid, email, state, submittedAt, review: { drafts, accepted, scored, total } }]
+      counts, and `next` — the next submission nobody has marked
+studio_submissions { course, exercise, action: "get", sid, questions: ["s2"] }
+    → the question, the key's worked answer, the typed answer,
+      and the student's pages as image blocks you can read
+studio_review { course, exercise, sid, action: "put", items: [...], scores: { s2: 35 } }
+    → stored as drafts, with your token named in `via`
+studio_review { course, exercise, sid, action: "discard", id }
+```
+
+**Mark one question at a time on a long submission.** A photographed page is a
+few hundred kilobytes and a handful of them will fill a client's result budget;
+`questions: ["s2"]` narrows both the text and the images, and `pages: "none"`
+is the text-only read for a typed answer.
+
+**Anchor every remark where it happened.** A remark the lecturer has to go and
+find in a photograph of somebody's handwriting is a remark they will skip.
+
+```json
+{ "question": "s2",
+  "target": { "kind": "page", "page": 1, "rect": [0.12, 0.40, 0.55, 0.08] },
+  "body": "הסימן של $\gamma$ הפוך — ראו את משוואת התנועה.",
+  "points": -5 }
+```
+
+- `{ "kind": "text", "block": "<data-id>", "quote": "<the words>" }` for typed
+  work — the same anchor an author note uses, so it survives an edit.
+- `{ "kind": "page", "page": 1, "rect": [x, y, w, h] }` for handwriting, in
+  **fractions of the page**, from the top left, each between 0 and 1. Pixels
+  would land on the wrong ink on the next screen the page is opened on.
+- `{ "kind": "question" }` for something about the whole answer.
+
+**`points` on a remark is a suggestion; `scores` is the mark.** The delta on an
+item is there so the lecturer can see your arithmetic and use it or ignore it;
+the number that counts is one per question, and the total is their sum. Write a
+short reason for every point you take off, in the course's language, and **do
+not touch a question you were not asked about** — a review is read line by
+line and an unasked-for opinion costs the lecturer the time they came here to
+save.
+
+**Never repeat the key.** `key.html` is the worked answers and the rubric. It
+is served to you because you are marking with it; it is never served to a
+student, and it must not appear in anything anybody but the lecturer reads.
+
+**Picking up where you left off.** There is no state to carry between
+sessions: `action: "list"` again, and the rows say where you were — `scored`
+is the questions that already carry an accepted mark, `drafts` is what is
+still waiting for the lecturer, and `next` is the first submission nobody has
+marked at all. A submission you marked last session shows its drafts; one the
+lecturer has been through shows them accepted.
+
+Releasing the grades to the class is the lecturer's own action in the studio
+(`POST /courses/{c}/exercises/{x}/release`). Do not ask for it and do not do
+it: it is the moment a class can see their marks, and it belongs to the person
+whose name is on the course — like publishing.
+
 ## The same loop, through the tools
 
 ```

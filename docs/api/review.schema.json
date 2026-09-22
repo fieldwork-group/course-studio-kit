@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://studio.fieldwork-group.com/schema/review.schema.json",
+  "title": "review.json",
+  "description": "One lecturer's reading of one submission: the remarks, anchored to the student's text or to a rectangle on a photographed page, and the mark per question. It is written by the grading workspace and by the lecturer's own agent through `studio_review`, and **everything an agent writes is a draft**: `state` is set by the route from the door the write came through, never by the writer. A student is served the accepted items and scores, and only once the exercise's `grades.released` is set.",
+  "type": "object",
+  "required": [
+    "exercise",
+    "student"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "exercise": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"
+    },
+    "student": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$",
+      "description": "the `sid`; no key or field under `students/` ever carries an email"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reviewItem"
+      }
+    },
+    "scores": {
+      "type": "object",
+      "description": "the mark per question, keyed by the question's id",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/reviewScore"
+      }
+    },
+    "updated": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "$defs": {
+    "reviewTarget": {
+      "description": "where the item points: { kind: \"text\", block, quote? }, { kind: \"page\", page, rect: [x, y, w, h] with each number between 0 and 1 }, or { kind: \"question\" }",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "block"
+          ],
+          "properties": {
+            "kind": {
+              "const": "text"
+            },
+            "block": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$",
+              "description": "the data-id of the block in the typed answer"
+            },
+            "quote": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 400,
+              "description": "the sentence, so the item survives an edit that moves the block"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "page",
+            "rect"
+          ],
+          "properties": {
+            "kind": {
+              "const": "page"
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "the page number within the question, as the submission indexes it"
+            },
+            "rect": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "description": "[x, y, w, h] as fractions of the page, each between 0 and 1"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "question"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "reviewVia": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "null for a session; { token, label } for an access token; { connector } for the MCP door. The route fills it from the identity",
+      "properties": {
+        "token": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "connector": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "reviewState": {
+      "enum": [
+        "draft",
+        "accepted"
+      ],
+      "description": "set by the route: `draft` when `via` is not null, `accepted` for a session's own write or after POST …/review/accept"
+    },
+    "reviewItem": {
+      "type": "object",
+      "description": "one remark on one question, anchored where it happened",
+      "required": [
+        "id",
+        "question",
+        "body"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "a ULID minted by the route; a body carrying one that exists updates that item"
+        },
+        "question": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$",
+          "description": "the question's id — the data-id of its section in questions.html"
+        },
+        "target": {
+          "$ref": "#/$defs/reviewTarget"
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 4000,
+          "description": "the remark, in the course's language; markdown with $…$ maths"
+        },
+        "points": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "a delta the lecturer may use or ignore; the number that counts is in `scores`"
+        },
+        "author": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "the actor who wrote it; the route fills it"
+        },
+        "via": {
+          "$ref": "#/$defs/reviewVia"
+        },
+        "state": {
+          "$ref": "#/$defs/reviewState"
+        },
+        "created": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "reviewScore": {
+      "type": "object",
+      "description": "one question's mark; the total is the sum of the accepted ones",
+      "required": [
+        "points"
+      ],
+      "properties": {
+        "points": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "null is \"not marked yet\"; the route refuses to release while one is missing"
+        },
+        "author": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "via": {
+          "$ref": "#/$defs/reviewVia"
+        },
+        "state": {
+          "$ref": "#/$defs/reviewState"
+        },
+        "updated": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
