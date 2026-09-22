@@ -97,6 +97,15 @@
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"
       },
       "uniqueItems": true
+    },
+    "exercises": {
+      "type": "array",
+      "description": "the exercise ids in the lecturer's own order; `POST …/exercises` appends",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"
+      },
+      "uniqueItems": true
     }
   }
 }

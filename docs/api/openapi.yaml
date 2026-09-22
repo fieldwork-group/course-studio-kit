@@ -67,6 +67,8 @@ tags:
     description: A course, its theme and its guides.
   - name: lectures
     description: The documents, their history and their assets.
+  - name: exercises
+    description: A sheet of questions, its private key, and what each question is worth.
   - name: publish
     description: Draft to student-visible page.
   - name: threads
@@ -1606,6 +1608,307 @@ paths:
         '403': { $ref: '#/components/responses/forbidden' }
         '404': { $ref: '#/components/responses/notFound' }
 
+  /courses/{c}/exercises:
+    parameters:
+      - $ref: '#/components/parameters/course'
+    get:
+      tags: [exercises]
+      operationId: listExercises
+      summary: The course's exercises, in the lecturer's order.
+      description: |
+        Every `exercise.json` named by `course.exercises`, in that order. An id
+        whose manifest is missing comes back as `{ id, missing: true }` rather
+        than being dropped, because a course listing an exercise that is not
+        there is something to see and not something to hide.
+      responses:
+        '200':
+          description: The list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  course: { type: string }
+                  exercises:
+                    type: array
+                    items: { $ref: '#/components/schemas/Exercise' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+    post:
+      tags: [exercises]
+      operationId: createExercise
+      summary: Open an exercise.
+      description: |
+        `{ title, week?, release? }`. **The id is generated** — eight
+        characters of lower-cased Crockford base32, as a course id is — and a
+        body carrying `id` is a `400 invalid_exercise`; so is one carrying
+        `grades`, `created` or `by`, which are the server's.
+
+        Writes three objects and appends the id to `course.exercises`: an
+        empty `questions.html` and `key.html` holding the title as their `h1`,
+        then the manifest. The fragments first, so a course can never list an
+        exercise whose prefix is empty. Event `exercise.create`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+                week: { type: [integer, 'null'], minimum: 1, maximum: 52 }
+                release: { $ref: '#/components/schemas/ExerciseRelease' }
+      responses:
+        '201':
+          description: Opened.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exercise: { $ref: '#/components/schemas/Exercise' }
+                  etag: { type: string }
+        '400': { $ref: '#/components/responses/invalidDocument' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/exercises/{x}:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+      - $ref: '#/components/parameters/ifMatchOptional'
+    get:
+      tags: [exercises]
+      operationId: getExercise
+      summary: One exercise's manifest.
+      description: |
+        The manifest, its ETag, and the course's id, language and direction —
+        the three fields the page needs to draw the fragment in the course's
+        own language without a second request, exactly as `GET
+        …/lectures/{l}` carries them.
+      responses:
+        '200':
+          description: The manifest.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  course:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      lang: { type: string, enum: [he, en] }
+                      dir: { type: string, enum: [rtl, ltr] }
+                  exercise: { $ref: '#/components/schemas/Exercise' }
+                  etag: { type: string }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+    put:
+      tags: [exercises]
+      operationId: putExercise
+      summary: Title, week, dates and the points per question.
+      description: |
+        The whole manifest, validated against `exercise.schema.json`.
+        `If-Match` is optional and honoured when sent.
+
+        **Question ids are not writable.** They are the `data-id`s of the
+        top-level sections of `questions.html` and are re-derived on every
+        save of that fragment; a `questions` entry naming an id this exercise
+        does not have is a `400 invalid_exercise` at `/questions`, and the
+        stored order always wins — a body listing two of five questions is
+        setting two prices, not reordering the exercise. A question priced
+        `null` is allowed to be stored; it is what blocks *releasing* a grade
+        (plan 04).
+
+        `grades`, `created` and `by` are the server's: a body carrying one is
+        a 400, and the stored value is carried forward when it is left out.
+        Event `exercise.save`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Exercise' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exercise: { $ref: '#/components/schemas/Exercise' }
+                  etag: { type: string }
+                  versionId: { type: string }
+        '400': { $ref: '#/components/responses/invalidDocument' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '412': { $ref: '#/components/responses/precondition' }
+    delete:
+      tags: [exercises]
+      operationId: deleteExercise
+      summary: Remove the exercise — unless somebody has submitted.
+      description: |
+        Deletes the three objects and takes the id out of `course.exercises`.
+
+        **`409 exercise_has_submissions` while any student has submitted
+        against it**: a submission is the only copy of a student's work, and an
+        exercise deleted out from under one leaves a grade nobody can explain.
+        There is no `?force`. Event `exercise.delete`.
+      responses:
+        '204':
+          description: Deleted.
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409':
+          description: A student has submitted against this exercise.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /courses/{c}/exercises/{x}/questions:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+      - $ref: '#/components/parameters/ifMatch'
+      - $ref: '#/components/parameters/ifNoneMatch'
+      - $ref: '#/components/parameters/changedBlocks'
+      - $ref: '#/components/parameters/studioClient'
+    get:
+      tags: [exercises]
+      operationId: getExerciseQuestions
+      summary: The questions fragment.
+      description: |
+        A notes fragment: a `header.notes-head` and a `main` of `section`s,
+        **one section per question**.
+      responses:
+        '200':
+          description: The fragment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoredDocument' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+    put:
+      tags: [exercises]
+      operationId: putExerciseQuestions
+      summary: Save the whole questions fragment.
+      description: |
+        The same save as `PUT …/lectures/{l}/notes` — whole fragment,
+        `If-Match` required, normalised through the schema, `422
+        unsafe_markup` and `413 too_large` before anything is written — with
+        one thing after it: **`questions[]` is re-derived from what was
+        stored**. The top-level sections in order are the questions; a section
+        that survived keeps its points, a new one is priced `null`, and an id
+        whose section is gone is dropped. The new list comes back in the
+        answer. Event `exercise.save`.
+      requestBody:
+        required: true
+        content:
+          text/html:
+            schema: { type: string }
+      responses:
+        '200':
+          description: Saved, with the re-derived question list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SaveResult'
+                  - type: object
+                    properties:
+                      questions:
+                        type: array
+                        items: { $ref: '#/components/schemas/ExerciseQuestion' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '412': { $ref: '#/components/responses/precondition' }
+        '422': { $ref: '#/components/responses/unsafeMarkup' }
+
+  /courses/{c}/exercises/{x}/key:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+      - $ref: '#/components/parameters/ifMatch'
+      - $ref: '#/components/parameters/ifNoneMatch'
+      - $ref: '#/components/parameters/changedBlocks'
+      - $ref: '#/components/parameters/studioClient'
+    get:
+      tags: [exercises]
+      operationId: getExerciseKey
+      summary: The worked answers and the rubric. An author of the course, never a viewer.
+      description: |
+        A second fragment of the same shape, whose sections line up with the
+        questions **by order**.
+
+        **`403 course_read_only` for a `viewer`.** The course gate hands a
+        viewer every other GET on the course; this is the marking scheme, and
+        a `viewers` grant is what a teaching assistant or a colleague gets. It
+        is never published, never served under `/courses/{c}/me/…`, and
+        `cache-control: no-store`.
+      responses:
+        '200':
+          description: The fragment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoredDocument' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+    put:
+      tags: [exercises]
+      operationId: putExerciseKey
+      summary: Save the whole key fragment.
+      description: |
+        As `PUT …/questions`, and it derives nothing: the key's sections carry
+        no question ids and are aligned to the questions by order. Event
+        `exercise.save`.
+      requestBody:
+        required: true
+        content:
+          text/html:
+            schema: { type: string }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SaveResult' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '412': { $ref: '#/components/responses/precondition' }
+        '422': { $ref: '#/components/responses/unsafeMarkup' }
+
+  /courses/{c}/exercises/{x}/preview:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+    get:
+      tags: [exercises]
+      operationId: previewExercise
+      summary: The shell around one of the two fragments — a whole page, openable in a tab.
+      description: |
+        `?mode=questions` (the default) or `?mode=key`, rendered by the same
+        shell the lecture preview uses, so what an author looks at and what a
+        student would read are the same renderer. `?mode=key` is an author's,
+        like the key route itself. `Cache-Control: no-store`.
+      parameters:
+        - name: mode
+          in: query
+          required: false
+          schema: { type: string, enum: [questions, key], default: questions }
+      responses:
+        '200':
+          description: A whole HTML page.
+          content:
+            text/html:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
   /courses/{c}/members:
     parameters:
       - $ref: '#/components/parameters/course'
@@ -1632,6 +1935,148 @@ paths:
                         email: { type: string }
                         role: { type: string, enum: [author, viewer] }
         '403': { $ref: '#/components/responses/forbidden' }
+
+  /courses/{c}/roster:
+    parameters:
+      - $ref: '#/components/parameters/course'
+    get:
+      tags: [courses]
+      operationId: getRoster
+      summary: The course's students, with each one's sid. An author of the course.
+      description: |
+        The list a lecturer uploaded: one line per student, with the `sid` their
+        work is filed under. **An author of the course** (an administrator too);
+        a `viewer` gets `403 course_read_only`, because a reader of the drafts
+        is not somebody to hand two hundred email addresses to.
+
+        The access record beside each line is the gate; this is the course's own
+        copy, and it is what the grading list and the gradebook read.
+      responses:
+        '200':
+          description: The roster, sorted by address.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Roster' }
+        '403': { $ref: '#/components/responses/forbidden' }
+    put:
+      tags: [courses]
+      operationId: putRoster
+      summary: Add addresses to the roster. Idempotent, and reports per address.
+      description: |
+        Each address becomes a user in the Cognito pool in the `students`
+        group, a `student` role on this course, and a line here — in that
+        order, because a grant on an address nobody can sign in as does
+        nothing. A student signs in with their address and a one-time code;
+        there is no password and no invitation email.
+
+        **Idempotent, and one bad line does not cost the others.** A lecturer
+        pastes a column out of a spreadsheet and half of it is last week's
+        paste, so the answer is `{ added, present, refused }` rather than a
+        400 on the first typo. `refused` carries a `reason` each:
+
+        - `invalid_email` — not an address;
+        - `has_role` — that address is already an `author` or a `viewer` of
+          this course, and the roles map holds one role per course, so adding
+          it would quietly revoke what they have. A lecturer who wants to see
+          the student workspace adds a second address;
+        - `identity_failed` — the pool refused; the log has the reason.
+
+        At most 500 addresses per call (`400 too_many`). Event `roster.add`,
+        one per address actually added, carrying the address and the `sid`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [emails]
+              properties:
+                emails:
+                  type: array
+                  maxItems: 500
+                  items: { type: string }
+      responses:
+        '200':
+          description: What happened to each address.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [course, added, present, refused]
+                properties:
+                  course: { type: string }
+                  added: { type: integer, description: how many were new }
+                  present: { type: integer, description: how many were already on the roster }
+                  refused:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        email: { type: string }
+                        reason: { type: string, enum: [invalid_email, has_role, identity_failed] }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '409':
+          description: '`roster_busy` — the roster changed under three retries.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /courses/{c}/roster/test:
+    parameters:
+      - $ref: '#/components/parameters/course'
+    delete:
+      tags: [courses]
+      operationId: resetTestStudent
+      summary: Reset the course's test student — the entry and everything under it.
+      description: |
+        Every course has one built-in **test student**: a `sid` under `test` in
+        `roster.json`, with no Cognito user, no email and no access record. An
+        author's own `/courses/{c}/me/**` resolves to it, so a lecturer can see
+        the course as a student and submit an exercise to watch it land in
+        grading without a second account. It is created lazily, the first time
+        an author opens the workspace.
+
+        This is the reset: the entry goes, and so does every object under
+        `students/<that sid>/`, so the next open starts from nothing with a
+        fresh id. **An author of the course**; nothing here touches Cognito.
+        Event `roster.reset`.
+
+        Registered before `/courses/{c}/roster/{email}` — `test` is not an
+        address, and the router's first match wins.
+      responses:
+        '204': { description: Reset. }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404':
+          description: This course has no test student yet.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /courses/{c}/roster/{email}:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - name: email
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      tags: [courses]
+      operationId: removeFromRoster
+      summary: Take one student off this course's roster.
+      description: |
+        Removes the `student` grant and the roster line. The **`sid` stays** on
+        the access record — a term's submissions are filed under it — and the
+        Cognito user is never deleted; they leave the `students` group only
+        once they are on no roster in the tenant at all. Event `roster.remove`.
+      responses:
+        '204': { description: Removed. }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404':
+          description: That address is not on this course's roster.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /courses/{c}/demos:
     get:
@@ -2046,6 +2491,12 @@ components:
       required: true
       description: the lecture id, a folder name such as `L02-damped-driven`
       schema: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' }
+    exercise:
+      name: x
+      in: path
+      required: true
+      description: the exercise id, generated when the exercise is opened
+      schema: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' }
     guideName:
       name: name
       in: path
@@ -2175,6 +2626,40 @@ components:
           schema: { type: string }
 
   schemas:
+    Roster:
+      type: object
+      required: [course, students]
+      properties:
+        course: { type: string }
+        students:
+          type: array
+          items:
+            type: object
+            required: [email, sid]
+            properties:
+              email: { type: string }
+              sid:
+                type: string
+                description: |
+                  Eight characters of Crockford base32. Everything this student
+                  writes is filed under it; **no key under `students/` carries
+                  an email**. One person, one sid, across every course of the
+                  tenant.
+              added: { type: [string, 'null'], format: date-time }
+              by: { type: [string, 'null'], description: who added them }
+        test:
+          type: [object, 'null']
+          description: |
+            The course's **test student** — an author's own workspace, created
+            lazily the first time one is opened. No person, no email, and not
+            in `students`, because everything that walks the roster means the
+            class.
+          properties:
+            sid: { type: string }
+            created: { type: [string, 'null'], format: date-time }
+            by: { type: [string, 'null'] }
+        updated: { type: [string, 'null'], format: date-time }
+
     ReaderPassword:
       type: object
       description: |
@@ -2370,6 +2855,11 @@ components:
       properties:
         id: { type: string }
         number: { type: integer }
+        week:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 52
+          description: the teaching week this lecture belongs to; absent or null is unscheduled
         title: { type: string }
         docTitle: { type: string }
         slidesTitle: { type: [string, 'null'] }
@@ -2414,6 +2904,7 @@ components:
         id: { type: string }
         title: { type: [string, 'null'] }
         number: { type: [integer, 'null'] }
+        week: { type: [integer, 'null'], minimum: 1, maximum: 52 }
         lastModified: { type: [string, 'null'], format: date-time }
         actor: { type: [string, 'null'] }
         lastAction: { type: [string, 'null'] }
@@ -2436,6 +2927,49 @@ components:
         body: { type: string }
         etag: { type: string }
         versionId: { type: string }
+
+    ExerciseQuestion:
+      type: object
+      description: |
+        One question: the `data-id` of its section in `questions.html`, and
+        what it is worth. The id is derived on every save of the fragment and
+        is not the client's to choose; `points` is.
+      properties:
+        id: { type: string }
+        points:
+          type: [number, 'null']
+          minimum: 0
+          description: null until the author prices it, which blocks releasing a grade and not saving
+
+    ExerciseRelease:
+      type: [object, 'null']
+      description: When the exercise opens to students, when it is due, and the late rule.
+      properties:
+        from: { type: [string, 'null'], format: date-time }
+        due: { type: [string, 'null'], format: date-time }
+        late:
+          type: string
+          enum: [accept, refuse]
+          description: '`accept` takes a late submission and flags it; `refuse` answers 409'
+
+    Exercise:
+      type: object
+      description: '`exercise.json`. The questions themselves are `questions.html`.'
+      properties:
+        id: { type: string, description: generated; the server overwrites it with the one in the path }
+        title: { type: string }
+        week: { type: [integer, 'null'], minimum: 1, maximum: 52 }
+        questions:
+          type: array
+          items: { $ref: '#/components/schemas/ExerciseQuestion' }
+        release: { $ref: '#/components/schemas/ExerciseRelease' }
+        grades:
+          type: [object, 'null']
+          readOnly: true
+          properties:
+            released: { type: [string, 'null'], format: date-time }
+        created: { type: [string, 'null'], readOnly: true }
+        by: { type: [string, 'null'], readOnly: true }
 
     SaveResult:
       type: object

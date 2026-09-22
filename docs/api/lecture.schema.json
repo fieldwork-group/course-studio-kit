@@ -26,6 +26,9 @@
       "minimum": 0,
       "description": "the lecture number in the course"
     },
+    "week": {
+      "$ref": "#/$defs/week"
+    },
     "title": {
       "type": "string",
       "description": "the lecture's title, as the h1 reads, in the course's language"
@@ -123,6 +126,15 @@
       "additionalProperties": {
         "$ref": "#/$defs/demo"
       }
+    },
+    "week": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 52,
+      "description": "the teaching week this belongs to, 1-52; null or absent means unscheduled"
     }
   }
 }

@@ -13580,13 +13580,13 @@ var PREFIX = "STUDIO_";
 function parseEnv(text2) {
   const out = {};
   for (const raw of String(text2).split("\n")) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const at = line.indexOf("=");
+    const line2 = raw.trim();
+    if (!line2 || line2.startsWith("#")) continue;
+    const at = line2.indexOf("=");
     if (at <= 0) continue;
-    const key2 = line.slice(0, at).trim();
+    const key2 = line2.slice(0, at).trim();
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key2)) continue;
-    let value = line.slice(at + 1).trim();
+    let value = line2.slice(at + 1).trim();
     if (value.length > 1 && (value.startsWith('"') && value.endsWith('"') || value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
@@ -13734,14 +13734,14 @@ function createClient({ base, user, token, session } = {}) {
     if (bearer) return { authorization: `Bearer ${await freshIdToken(cached)}` };
     return { "x-dev-user": actor };
   }
-  async function call(method, path13, { body, headers = {}, raw = false } = {}) {
+  async function call(method, path14, { body, headers = {}, raw = false } = {}) {
     const h = { "x-studio-client": CLIENT, ...headers, ...await identity() };
     let payload = body;
     if (body !== void 0 && !raw && typeof body !== "string" && !Buffer.isBuffer(body)) {
       payload = JSON.stringify(body);
       h["content-type"] = "application/json";
     }
-    const res = await fetch(`${origin}/api${path13}`, { method, headers: h, body: payload });
+    const res = await fetch(`${origin}/api${path14}`, { method, headers: h, body: payload });
     const text2 = await res.text();
     let json = null;
     try {
@@ -14783,11 +14783,11 @@ var ResolvedPos = class _ResolvedPos {
   /**
   @internal
   */
-  constructor(pos, path13, parentOffset) {
+  constructor(pos, path14, parentOffset) {
     this.pos = pos;
-    this.path = path13;
+    this.path = path14;
     this.parentOffset = parentOffset;
-    this.depth = path13.length / 3 - 1;
+    this.depth = path14.length / 3 - 1;
   }
   /**
   @internal
@@ -15018,12 +15018,12 @@ var ResolvedPos = class _ResolvedPos {
   static resolve(doc, pos) {
     if (!(pos >= 0 && pos <= doc.content.size))
       throw new RangeError("Position " + pos + " out of range");
-    let path13 = [];
+    let path14 = [];
     let start = 0, parentOffset = pos;
     for (let node = doc; ; ) {
       let { index, offset } = node.content.findIndex(parentOffset);
       let rem = parentOffset - offset;
-      path13.push(node, index, start + offset);
+      path14.push(node, index, start + offset);
       if (!rem)
         break;
       node = node.child(index);
@@ -15032,7 +15032,7 @@ var ResolvedPos = class _ResolvedPos {
       parentOffset = rem - 1;
       start += offset + 1;
     }
-    return new _ResolvedPos(pos, path13, parentOffset);
+    return new _ResolvedPos(pos, path14, parentOffset);
   }
   /**
   @internal
@@ -16371,17 +16371,17 @@ var Schema = class {
 function gatherMarks(schema2, marks2) {
   let found2 = [];
   for (let i = 0; i < marks2.length; i++) {
-    let name = marks2[i], mark = schema2.marks[name], ok2 = mark;
+    let name = marks2[i], mark = schema2.marks[name], ok3 = mark;
     if (mark) {
       found2.push(mark);
     } else {
       for (let prop2 in schema2.marks) {
         let mark2 = schema2.marks[prop2];
         if (name == "_" || mark2.spec.group && mark2.spec.group.split(" ").indexOf(name) > -1)
-          found2.push(ok2 = mark2);
+          found2.push(ok3 = mark2);
       }
     }
-    if (!ok2)
+    if (!ok3)
       throw new SyntaxError("Unknown mark type: '" + marks2[i] + "'");
   }
   return found2;
@@ -17800,6 +17800,12 @@ var STRINGS = {
     pdf: "PDF",
     /** the site root's heading, and the course page's link back up to it */
     courses: "קורסים",
+    /** the heading over one week's lectures on the course page; the number
+     *  follows it, because a week's name is a word and a number and neither
+     *  language wants a sentence template for that */
+    week: "שבוע",
+    /** …and over the lectures that belong to no week yet */
+    unscheduled: "ללא שבוע",
     /** …and what that root says when nothing is published yet */
     noCourses: "עדיין לא פורסם כאן אף קורס.",
     /** a demo, as the platform names one: the ◆ marker in the TOC, the
@@ -17825,6 +17831,8 @@ var STRINGS = {
     standalone: "Single file",
     pdf: "PDF",
     courses: "Courses",
+    week: "Week",
+    unscheduled: "Unscheduled",
     noCourses: "No course has been published here yet.",
     demo: "Demo",
     play: "Play",
@@ -18739,7 +18747,7 @@ async function importLecture(client, lectureDir, { course, author, title, log = 
       log(`  skip demo ${slug} (no ${path7.relative(dir, demoDir)}/demo.json)`);
       continue;
     }
-    await demosPush(client, demoDir, { course: c, stateless: true, log: (line) => log(`  ${line}`) });
+    await demosPush(client, demoDir, { course: c, stateless: true, log: (line2) => log(`  ${line2}`) });
   }
   return { course: c, id, manifest };
 }
@@ -18755,8 +18763,190 @@ async function grantAuthor(client, course, email, log) {
 }
 
 // studio/cli/src/pull-course.js
+import path9 from "node:path";
+
+// studio/cli/src/exercises.js
+import fs8 from "node:fs/promises";
 import path8 from "node:path";
-var courseDirIn = (into, course) => path8.join(path8.resolve(into), "courses", course);
+var FILES2 = [
+  { name: "exercise.json", type: "application/json" },
+  { name: "questions.html", type: "text/html; charset=utf-8", route: "questions" },
+  { name: "key.html", type: "text/html; charset=utf-8", route: "key" }
+];
+var FRAGMENTS = FILES2.filter((f) => f.route);
+async function readIf4(file) {
+  try {
+    return await fs8.readFile(file, "utf8");
+  } catch {
+    return null;
+  }
+}
+async function writeFile3(file, body) {
+  await fs8.mkdir(path8.dirname(file), { recursive: true });
+  await fs8.writeFile(file, body, "utf8");
+}
+var exercisesDirFor = (courseDir2) => path8.join(path8.resolve(courseDir2), "exercises");
+function line(e) {
+  const questions = e.questions ?? [];
+  const total = questions.reduce((sum, q) => sum + (q.points ?? 0), 0);
+  const unpriced = questions.filter((q) => q.points == null).length;
+  return [
+    e.week == null ? "unscheduled" : `week ${e.week}`,
+    `${questions.length} question${questions.length === 1 ? "" : "s"}`,
+    `${total} point${total === 1 ? "" : "s"}`,
+    ...unpriced ? [`${unpriced} unpriced`] : [],
+    ...e.release?.due ? [`due ${e.release.due}`] : []
+  ].join(" · ");
+}
+async function exercisesList(client, { course, json = false, log = console.log } = {}) {
+  if (!course) throw new CliError("usage: studio exercises list <course>");
+  const res = await client.call("GET", `/courses/${encodeURIComponent(course)}/exercises`);
+  if (res.status === 404) throw new CliError(`no course ${course} on ${client.origin}`, 2);
+  const exercises = expectOk(res, `GET ${course}/exercises`).exercises ?? [];
+  if (json) {
+    log(JSON.stringify(exercises, null, 2));
+    return exercises;
+  }
+  if (!exercises.length) {
+    log(`no exercises in ${course}`);
+    return exercises;
+  }
+  for (const e of exercises) {
+    log(`${String(e.id).padEnd(12)} ${e.title ?? "(untitled)"}`);
+    log(`  ${line(e)}`);
+  }
+  return exercises;
+}
+async function pullExercise(client, { course, exercise, dir, log = console.log }) {
+  const etags = {};
+  const written = [];
+  const base = `/courses/${encodeURIComponent(course)}/exercises/${encodeURIComponent(exercise)}`;
+  const manifest = await client.call("GET", base);
+  if (manifest.status >= 300) {
+    log(`  ! ${exercise}/exercise.json: ${manifest.status} ${apiMessage(manifest)}`);
+    return { exercise, etags, written };
+  }
+  await writeFile3(
+    path8.join(dir, exercise, "exercise.json"),
+    `${JSON.stringify(manifest.json.exercise, null, 2)}
+`
+  );
+  etags["exercise.json"] = manifest.json.etag ?? null;
+  written.push(`${exercise}/exercise.json`);
+  for (const file of FRAGMENTS) {
+    const res = await client.call("GET", `${base}/${file.route}`);
+    if (res.status === 403) {
+      log(`  ! ${exercise}/${file.name}: the key is an author of the course's`);
+      continue;
+    }
+    if (res.status >= 300) {
+      log(`  ! ${exercise}/${file.name}: ${res.status}`);
+      continue;
+    }
+    await writeFile3(path8.join(dir, exercise, file.name), res.json.body);
+    etags[file.name] = res.json.etag ?? null;
+    written.push(`${exercise}/${file.name}`);
+  }
+  return { exercise, etags, written };
+}
+async function exercisesPull(client, courseDir2, {
+  course,
+  only = null,
+  announce = true,
+  log = console.log
+} = {}) {
+  const dir = exercisesDirFor(courseDir2);
+  const list = await client.call("GET", `/courses/${encodeURIComponent(course)}/exercises`);
+  const all = expectOk(list, `GET ${course}/exercises`).exercises ?? [];
+  const wanted = only ? all.filter((e) => only.includes(e.id)) : all;
+  const written = [];
+  const etags = {};
+  for (const exercise of wanted) {
+    const got = await pullExercise(client, { course, exercise: exercise.id, dir, log });
+    etags[exercise.id] = got.etags;
+    written.push(...got.written);
+  }
+  const root = path8.resolve(courseDir2);
+  const state = await readState(root);
+  await writeState(root, {
+    ...state ?? {},
+    course,
+    api: client.origin,
+    exercises: { ...state?.exercises ?? {}, ...etags },
+    exercisesPulledAt: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  if (announce) {
+    log(`pulled ${written.length} file(s) of ${wanted.length} exercise(s) → ${dir}`);
+    for (const f of written) log(`  exercises/${f}`);
+  }
+  return { dir, course, exercises: wanted.map((e) => e.id), written, etags };
+}
+async function exercisesPush(client, exerciseDir, {
+  course,
+  log = console.log,
+  stateless = false
+} = {}) {
+  const dir = path8.resolve(exerciseDir);
+  const exercise = path8.basename(dir);
+  const manifestText = await readIf4(path8.join(dir, "exercise.json"));
+  if (!manifestText) throw new CliError(`no exercise.json in ${dir}`, 2);
+  let manifest;
+  try {
+    manifest = JSON.parse(manifestText);
+  } catch (err) {
+    throw new CliError(`exercise.json is not JSON: ${err.message}`);
+  }
+  const courseDir2 = path8.resolve(dir, "..", "..");
+  const state = stateless ? null : await readState(courseDir2);
+  const known = state?.exercises?.[exercise] ?? {};
+  const etags = { ...known };
+  const sent = [];
+  const base = `/courses/${encodeURIComponent(course)}/exercises/${encodeURIComponent(exercise)}`;
+  for (const file of FRAGMENTS) {
+    const body = await readIf4(path8.join(dir, file.name));
+    if (body === null) {
+      log(`  ! ${file.name}: not in ${dir}`);
+      continue;
+    }
+    const headers2 = { "content-type": file.type };
+    if (etags[file.name]) headers2["if-match"] = etags[file.name];
+    else headers2["if-none-match"] = "*";
+    const res = await client.call("PUT", `${base}/${file.route}`, { body, raw: true, headers: headers2 });
+    if (res.status === 412) {
+      throw new CliError(
+        `${file.name}: the studio has a newer version (${apiMessage(res)}).
+  run \`studio exercises pull\` first — this command does not merge.`,
+        3
+      );
+    }
+    expectOk(res, `PUT ${exercise}/${file.name}`);
+    etags[file.name] = res.json?.etag ?? null;
+    sent.push(`${file.name} (${Buffer.byteLength(body)} B)`);
+  }
+  const { id, grades, created, by, ...client0 } = manifest;
+  const headers = {};
+  if (etags["exercise.json"]) headers["if-match"] = etags["exercise.json"];
+  const saved = await client.call("PUT", base, { body: client0, headers });
+  if (saved.status === 412) {
+    throw new CliError(`exercise.json: ${apiMessage(saved)}; run \`studio exercises pull\` first`, 3);
+  }
+  expectOk(saved, `PUT ${course}/exercises/${exercise}`);
+  etags["exercise.json"] = saved.json?.etag ?? null;
+  sent.push("exercise.json");
+  if (!stateless) {
+    await writeState(courseDir2, {
+      ...state ?? {},
+      course,
+      api: client.origin,
+      exercises: { ...state?.exercises ?? {}, [exercise]: etags }
+    });
+  }
+  log(`pushed ${course}/${exercise}: ${sent.join(", ")}`);
+  return { course, exercise, etags, sent };
+}
+
+// studio/cli/src/pull-course.js
+var courseDirIn = (into, course) => path9.join(path9.resolve(into), "courses", course);
 async function pullCourse(client, { course, into = ".", log = console.log } = {}) {
   if (!course) throw new CliError("usage: studio pull <course> [<into-dir>]");
   const got = await client.call("GET", `/courses/${encodeURIComponent(course)}`);
@@ -18770,9 +18960,11 @@ async function pullCourse(client, { course, into = ".", log = console.log } = {}
   if (guides.same.length) log(`  (${guides.same.length} guide(s) unchanged)`);
   const demos = await demosPull(client, courseDir2, { course, announce: false, log });
   for (const f of demos.written) log(`  demos/${f}`);
+  const exercises = await exercisesPull(client, courseDir2, { course, announce: false, log });
+  for (const f of exercises.written) log(`  exercises/${f}`);
   const pulled = [];
   for (const row of lectures) {
-    const dir = path8.join(courseDir2, "lectures", row.id);
+    const dir = path9.join(courseDir2, "lectures", row.id);
     await pullLecture(client, dir, {
       // The guides were written a moment ago; the lecture wants their ETags in
       // its state, not their names on the screen a second time.
@@ -18788,13 +18980,13 @@ async function pullCourse(client, { course, into = ".", log = console.log } = {}
     log(`  (${course} has no lectures yet — the studio is where the first one is written)`);
   }
   log("");
-  log(`${course}: ${pulled.length} lecture(s), ${demos.demos.length} demo(s), ${guides.written.length + guides.same.length} guide(s)`);
-  return { dir: courseDir2, course, lectures: pulled, demos: demos.demos, guides };
+  log(`${course}: ${pulled.length} lecture(s), ${exercises.exercises.length} exercise(s), ${demos.demos.length} demo(s), ${guides.written.length + guides.same.length} guide(s)`);
+  return { dir: courseDir2, course, lectures: pulled, exercises: exercises.exercises, demos: demos.demos, guides };
 }
 
 // studio/cli/src/init.js
-import fs8 from "node:fs/promises";
-import path9 from "node:path";
+import fs9 from "node:fs/promises";
+import path10 from "node:path";
 import { execFileSync } from "node:child_process";
 
 // studio/cli/src/reader.js
@@ -18983,10 +19175,10 @@ async function tokensList(client, { json, log = console.log }) {
     clip(String(t.label ?? ""), 32)
   ]);
   const w = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)));
-  const line = (cells) => cells.map((c, i) => c.padEnd(w[i])).join("  ").replace(/\s+$/, "");
-  log(line(head));
+  const line2 = (cells) => cells.map((c, i) => c.padEnd(w[i])).join("  ").replace(/\s+$/, "");
+  log(line2(head));
   log(w.map((n) => "-".repeat(n)).join("  "));
-  for (const r of rows) log(line(r));
+  for (const r of rows) log(line2(r));
   return tokens;
 }
 async function tokensRevoke(client, { id, log = console.log }) {
@@ -19013,7 +19205,7 @@ function describeIdentity(me) {
 // studio/cli/src/init.js
 var ENV_FILE2 = ".env";
 var ENV_KEY = "STUDIO_TOKEN";
-var CONFIG_FILE = path9.join(".studio", "config.json");
+var CONFIG_FILE = path10.join(".studio", "config.json");
 var IGNORED = [".env", ".studio/"];
 var STARTING_PROMPT = `This folder is a course in the Fieldwork Course Studio. The kit is
 https://github.com/fieldwork-group/course-studio-kit: clone it beside this
@@ -19042,17 +19234,17 @@ function courseList(me) {
 }
 var exists = async (p) => {
   try {
-    await fs8.stat(p);
+    await fs9.stat(p);
     return true;
   } catch {
     return false;
   }
 };
 function withToken(current, token) {
-  const line = `${ENV_KEY}=${token}`;
+  const line2 = `${ENV_KEY}=${token}`;
   if (!current) {
     return `# The Course Studio access token this folder uses. Never commit it.
-${line}
+${line2}
 `;
   }
   const lines = current.split("\n");
@@ -19060,10 +19252,10 @@ ${line}
   if (at === -1) {
     const body = current.endsWith("\n") ? current : `${current}
 `;
-    return `${body}${line}
+    return `${body}${line2}
 `;
   }
-  lines[at] = line;
+  lines[at] = line2;
   return lines.join("\n");
 }
 function withIgnores(current) {
@@ -19083,7 +19275,7 @@ async function initFolder({
   prompt = readPassword,
   log = console.log
 } = {}) {
-  const root = path9.resolve(dir);
+  const root = path10.resolve(dir);
   if (!await exists(root)) throw new CliError(`no such folder: ${root}
   make it first; an empty one is fine.`);
   if (trackedByGit(root, ENV_FILE2)) {
@@ -19119,17 +19311,17 @@ ${hint}`);
     courses,
     initialised: (/* @__PURE__ */ new Date()).toISOString()
   };
-  await fs8.mkdir(path9.join(root, ".studio"), { recursive: true });
-  await fs8.writeFile(path9.join(root, CONFIG_FILE), `${JSON.stringify(config, null, 2)}
+  await fs9.mkdir(path10.join(root, ".studio"), { recursive: true });
+  await fs9.writeFile(path10.join(root, CONFIG_FILE), `${JSON.stringify(config, null, 2)}
 `, "utf8");
-  const envPath = path9.join(root, ENV_FILE2);
-  const current = await fs8.readFile(envPath, "utf8").catch(() => null);
-  await fs8.writeFile(envPath, withToken(current, secret), { encoding: "utf8", mode: 384 });
-  await fs8.chmod(envPath, 384).catch(() => {
+  const envPath = path10.join(root, ENV_FILE2);
+  const current = await fs9.readFile(envPath, "utf8").catch(() => null);
+  await fs9.writeFile(envPath, withToken(current, secret), { encoding: "utf8", mode: 384 });
+  await fs9.chmod(envPath, 384).catch(() => {
   });
-  const ignorePath = path9.join(root, ".gitignore");
-  const ignore = withIgnores(await fs8.readFile(ignorePath, "utf8").catch(() => null));
-  if (ignore.added.length) await fs8.writeFile(ignorePath, ignore.text, "utf8");
+  const ignorePath = path10.join(root, ".gitignore");
+  const ignore = withIgnores(await fs9.readFile(ignorePath, "utf8").catch(() => null));
+  if (ignore.added.length) await fs9.writeFile(ignorePath, ignore.text, "utf8");
   const row = (name, said) => log(`  ${name.padEnd(20)}${said}`);
   log(`${root} is set up for ${describeIdentity(me)}`);
   row(ENV_FILE2, `${ENV_KEY}, mode 600 — not printed here, not committed`);
@@ -19143,21 +19335,21 @@ ${hint}`);
   if (!fromEnv) {
     log("  then start a coding session in this folder and paste this as its first message:");
     log("");
-    for (const line of STARTING_PROMPT.split("\n")) log(`    ${line}`);
+    for (const line2 of STARTING_PROMPT.split("\n")) log(`    ${line2}`);
   }
   return { dir: root, config, ignoreAdded: ignore.added };
 }
 
 // studio/cli/src/kit.js
-import fs9 from "node:fs";
-import path10 from "node:path";
+import fs10 from "node:fs";
+import path11 from "node:path";
 import { fileURLToPath } from "node:url";
-var MARKERS = ["AGENTS.md", path10.join("docs", "demos", "format.md")];
+var MARKERS = ["AGENTS.md", path11.join("docs", "demos", "format.md")];
 function kitPath(from = fileURLToPath(import.meta.url)) {
-  let dir = path10.dirname(path10.resolve(from));
+  let dir = path11.dirname(path11.resolve(from));
   for (let i = 0; i < 6; i++) {
-    if (MARKERS.every((m) => fs9.existsSync(path10.join(dir, m)))) return dir;
-    const up = path10.dirname(dir);
+    if (MARKERS.every((m) => fs10.existsSync(path11.join(dir, m)))) return dir;
+    const up = path11.dirname(dir);
     if (up === dir) break;
     dir = up;
   }
@@ -19176,11 +19368,11 @@ function printKitPath({ log = console.log } = {}) {
 }
 
 // studio/cli/src/push.js
-import fs10 from "node:fs/promises";
-import path11 from "node:path";
-async function readIf4(file) {
+import fs11 from "node:fs/promises";
+import path12 from "node:path";
+async function readIf5(file) {
   try {
-    return await fs10.readFile(file, "utf8");
+    return await fs11.readFile(file, "utf8");
   } catch {
     return null;
   }
@@ -19208,12 +19400,12 @@ function conflictMessage(which, res, mine) {
 }
 async function pushLecture(client, lectureDir, { course, lecture, state, log = console.log }) {
   await useNodeDom();
-  const dir = path11.resolve(lectureDir);
+  const dir = path12.resolve(lectureDir);
   const c = course;
   const id = lecture;
-  const notesHtml = await readIf4(path11.join(dir, "notes.html"));
+  const notesHtml = await readIf5(path12.join(dir, "notes.html"));
   if (!notesHtml) throw new CliError(`no notes.html in ${dir}`);
-  const slidesHtml = await readIf4(path11.join(dir, "slides.html"));
+  const slidesHtml = await readIf5(path12.join(dir, "slides.html"));
   const notes = split(notesHtml, { kind: "notes", id });
   const slides = slidesHtml ? split(slidesHtml, { kind: "slides", id }) : null;
   const got = await client.call("GET", `/courses/${c}/lectures/${id}`);
@@ -19440,10 +19632,10 @@ function ok(res, what) {
 }
 function table(log, head, rows) {
   const w = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)));
-  const line = (cells) => cells.map((c, i) => c.padEnd(w[i])).join("  ").replace(/\s+$/, "");
-  log(line(head));
+  const line2 = (cells) => cells.map((c, i) => c.padEnd(w[i])).join("  ").replace(/\s+$/, "");
+  log(line2(head));
   log(w.map((n) => "-".repeat(n)).join("  "));
-  for (const r of rows) log(line(r));
+  for (const r of rows) log(line2(r));
 }
 async function accessList(client, { json = false, log = console.log } = {}) {
   const doc = ok(await client.call("GET", "/access"), "GET /access");
@@ -19526,6 +19718,80 @@ var summarise = (roles) => {
   return pairs2.length ? pairs2.map(([c, r]) => `${c} ${r}`).join(" · ") : "no courses";
 };
 
+// studio/cli/src/roster.js
+import fs12 from "node:fs/promises";
+function parseAddresses(text2) {
+  return String(text2 ?? "").split(/[\s,;]+/).map((part) => part.trim().replace(/^.*</, "").replace(/>.*$/, "")).filter(Boolean);
+}
+function ok2(res, what) {
+  if (res.status < 300) return res.json;
+  if (res.json?.error === "course_read_only") {
+    throw new CliError(`${what}: the roster is an author of the course's; you have read access`);
+  }
+  if (res.json?.error === "course_not_allowed") {
+    throw new CliError(`${what}: you have no access to that course`);
+  }
+  throw new CliError(`${what}: ${res.status} ${apiMessage(res)}`);
+}
+function table2(log, head, rows) {
+  const w = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)));
+  const line2 = (cells) => cells.map((c, i) => c.padEnd(w[i])).join("  ").replace(/\s+$/, "");
+  log(line2(head));
+  log(w.map((n) => "-".repeat(n)).join("  "));
+  for (const r of rows) log(line2(r));
+}
+async function rosterList(client, { course, json = false, log = console.log }) {
+  if (!course) throw new CliError("usage: studio roster list <course>");
+  const doc = ok2(await client.call("GET", `/courses/${course}/roster`), `GET /courses/${course}/roster`);
+  if (json) {
+    log(JSON.stringify(doc, null, 2));
+    return doc;
+  }
+  const students = doc.students ?? [];
+  if (!students.length) log(`no students on ${course}`);
+  else {
+    table2(
+      log,
+      ["email", "sid", "added"],
+      students.map((s) => [s.email, s.sid, (s.added ?? "").slice(0, 10)])
+    );
+    log("");
+    log(`${students.length} student${students.length === 1 ? "" : "s"}`);
+  }
+  if (doc.test) log(`test student  ${doc.test.sid}`);
+  return doc;
+}
+async function rosterAdd(client, { course, emails = [], file, log = console.log }) {
+  if (!course) throw new CliError("usage: studio roster add <course> <email>… | --file <path>");
+  const list = [...emails];
+  if (file) {
+    let text2;
+    try {
+      text2 = await fs12.readFile(file, "utf8");
+    } catch (err) {
+      throw new CliError(`cannot read ${file}: ${err.message}`);
+    }
+    list.push(...parseAddresses(text2));
+  }
+  const addresses = parseAddresses(list.join("\n"));
+  if (!addresses.length) throw new CliError("no addresses: give them as arguments or with --file <path>");
+  const doc = ok2(
+    await client.call("PUT", `/courses/${course}/roster`, { body: { emails: addresses } }),
+    `PUT /courses/${course}/roster`
+  );
+  log(`${course}: ${doc.added} added · ${doc.present} already on the roster`);
+  for (const r of doc.refused ?? []) log(`  refused  ${r.email}  ${r.reason}`);
+  return doc;
+}
+async function rosterRemove(client, { course, email, log = console.log }) {
+  if (!course || !email) throw new CliError("usage: studio roster remove <course> <email>");
+  const res = await client.call("DELETE", `/courses/${course}/roster/${encodeURIComponent(email)}`);
+  if (res.status === 404) throw new CliError(`${email} is not on the roster of ${course}`);
+  ok2(res, `DELETE /courses/${course}/roster/${email}`);
+  log(`${course}: ${email} removed`);
+  return null;
+}
+
 // studio/cli/src/address.js
 var ADDRESS = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 var RESERVED = ["api", "lib", "studio", "demos", "index.html", "robots.txt", "templates", "site"];
@@ -19602,10 +19868,10 @@ async function notesList(client, dir, { course, lecture, open, json, log = conso
   ]);
   const head = ["id", "status", "author", "anchor", "note"];
   const w = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)));
-  const line = (cells) => cells.map((c, i) => c.padEnd(w[i])).join("  ").replace(/\s+$/, "");
-  log(line(head));
+  const line2 = (cells) => cells.map((c, i) => c.padEnd(w[i])).join("  ").replace(/\s+$/, "");
+  log(line2(head));
   log(w.map((n) => "-".repeat(n)).join("  "));
-  for (const r of rows) log(line(r));
+  for (const r of rows) log(line2(r));
   return notes;
 }
 async function notesAdd(client, dir, { course, lecture, body, block, section, quote, log = console.log }) {
@@ -19644,7 +19910,7 @@ async function notesDelete(client, dir, { course, lecture, id, log = console.log
 }
 
 // studio/cli/bin/studio.js
-import path12 from "node:path";
+import path13 from "node:path";
 var BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["json", "open", "help", "version"]);
 function parseArgs(argv) {
   const args2 = { _: [] };
@@ -19689,6 +19955,9 @@ var USAGE = `usage:
   studio access  grant  <email> <course> author|viewer
   studio access  revoke <email> [<course>]
   studio access  limit  <email> <n>|default
+  studio roster  list   <course>                  [--json]
+  studio roster  add    <course> <email>…         [--file class.txt]
+  studio roster  remove <course> <email>
   studio tokens  create  <label> [--scopes read,write] [--course id] [--expires 90d] [--json]
   studio tokens  list    [--json]
   studio tokens  revoke  <id>
@@ -19698,6 +19967,9 @@ var USAGE = `usage:
   studio demos   list  [--course id] [--json]
   studio demos   pull  [<course-dir>] [--course id]
   studio demos   push  <course-dir>/demos/<slug> [--course id]
+  studio exercises list  <course>                  [--json]
+  studio exercises pull  [<course-dir>] [--course id]
+  studio exercises push  <course-dir>/exercises/<x> [--course id]
   studio kit-path                                  where AGENTS.md and the demo format are
 
 global: --api http://127.0.0.1:8787   --user email   --token cst_…
@@ -19771,6 +20043,22 @@ async function accessCommand(sub, rest2) {
 ${USAGE}`);
   }
 }
+async function rosterCommand(sub, rest2) {
+  const client = createClient({ base: conn.api, user: conn.user, token: conn.token });
+  const [course, ...tail] = rest2;
+  const file = typeof args.file === "string" ? args.file : void 0;
+  switch (sub) {
+    case "list":
+      return rosterList(client, { course: course ?? args.course, json: Boolean(args.json), log: console.log });
+    case "add":
+      return rosterAdd(client, { course: course ?? args.course, emails: tail, file, log: console.log });
+    case "remove":
+      return rosterRemove(client, { course: course ?? args.course, email: tail[0], log: console.log });
+    default:
+      throw new CliError(`unknown: studio roster ${sub ?? ""}
+${USAGE}`);
+  }
+}
 async function tokensCommand(sub, rest2) {
   const client = createClient({ base: conn.api, user: conn.user, token: conn.token });
   const log = console.log;
@@ -19818,7 +20106,7 @@ ${USAGE}`);
 }
 async function demosCommand(sub, rest2) {
   const dirArg = rest2[0];
-  const near = sub === "push" && dirArg ? path12.resolve(dirArg, "..", "..") : dirArg ?? ".";
+  const near = sub === "push" && dirArg ? path13.resolve(dirArg, "..", "..") : dirArg ?? ".";
   const { client, course } = await openLecture({
     ...conn,
     dir: near,
@@ -19836,6 +20124,33 @@ async function demosCommand(sub, rest2) {
       return demosPush(client, dirArg, common);
     default:
       throw new CliError(`unknown: studio demos ${sub ?? ""}
+${USAGE}`);
+  }
+}
+async function exercisesCommand(sub, rest2) {
+  if (sub === "list") {
+    const course2 = rest2[0] ?? args.course;
+    if (!course2) throw new CliError("usage: studio exercises list <course>");
+    const { client: client2 } = await openCourse();
+    return exercisesList(client2, { course: course2, json: Boolean(args.json), log: console.log });
+  }
+  const dirArg = rest2[0];
+  const near = sub === "push" && dirArg ? path13.resolve(dirArg, "..", "..") : dirArg ?? ".";
+  const { client, course } = await openLecture({
+    ...conn,
+    dir: near,
+    course: args.course,
+    requireState: false
+  });
+  const common = { course, log: console.log };
+  switch (sub) {
+    case "pull":
+      return exercisesPull(client, dirArg ?? ".", common);
+    case "push":
+      if (!dirArg) throw new CliError("usage: studio exercises push <course-dir>/exercises/<x>");
+      return exercisesPush(client, dirArg, common);
+    default:
+      throw new CliError(`unknown: studio exercises ${sub ?? ""}
 ${USAGE}`);
   }
 }
@@ -19890,12 +20205,12 @@ try {
         break;
       }
       const dirArg = target;
-      const state = await readState(path12.resolve(dirArg));
+      const state = await readState(path13.resolve(dirArg));
       const client = createClient({ base: conn.api ?? state?.api, user: conn.user, token: conn.token });
       const course = args.course ?? state?.course ?? courseIdFor(dirArg);
       if (!course) {
         throw new CliError(
-          `which course is ${path12.resolve(dirArg)} part of? it is not under a \`courses/<id>/\` path
+          `which course is ${path13.resolve(dirArg)} part of? it is not under a \`courses/<id>/\` path
   and it has never been pulled, so say so: \`studio pull <lecture-dir> --course <id>\`,
   or pull the whole course by name: \`studio pull <course>\`.`,
           2
@@ -19940,8 +20255,14 @@ try {
     case "access":
       await accessCommand(rest[0], rest.slice(1));
       break;
+    case "roster":
+      await rosterCommand(rest[0], rest.slice(1));
+      break;
     case "tokens":
       await tokensCommand(rest[0], rest.slice(1));
+      break;
+    case "exercises":
+      await exercisesCommand(rest[0], rest.slice(1));
       break;
     case "demos":
       await demosCommand(rest[0], rest.slice(1));
