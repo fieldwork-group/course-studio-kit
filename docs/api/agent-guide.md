@@ -48,6 +48,11 @@ Three things, stored separately:
 - **the assets** — `figures/*` and `data/*`, referenced from the fragment by
   relative path.
 
+**Deleting one is a single verb and it leaves nothing behind** — the draft,
+and the published page too, because there is no *unpublish*. `studio_delete`
+does it, the title has to be repeated exactly as it reads, and it cannot be
+undone from the studio; ask the author before you call it, every time.
+
 What the fragment may contain is `docs/api/vocabulary.md`: every node, the
 classes that give it meaning, and a real example of each lifted from the
 committed lectures. **The schema is the sanitiser** — whatever it does not know
@@ -436,6 +441,7 @@ studio_save_notes { course, lecture, fragment, etag, changedBlocks: ["K7F2Q9X1M0
 studio_preview_url { course, lecture }            → a link for the person to open
 studio_publish { course, lecture }                → { job }   ← ask them first
 studio_publish_status { course, lecture, job }
+studio_delete { course, kind: "lecture", id, confirm: "<the title>" }  ← ask them first
 ```
 
 Three things about the tools that are not obvious from the names:

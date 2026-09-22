@@ -19832,6 +19832,85 @@ async function addressSet(client, { course, address, log = console.log } = {}) {
   return doc;
 }
 
+// studio/cli/src/delete.js
+var enc = encodeURIComponent;
+function readLine2(input = process.stdin) {
+  return new Promise((resolve, reject) => {
+    let buffer = "";
+    input.setEncoding("utf8");
+    input.on("data", (chunk) => {
+      buffer += chunk;
+      const at = buffer.indexOf("\n");
+      if (at === -1) return;
+      input.pause();
+      resolve(buffer.slice(0, at).replace(/\r$/, ""));
+    });
+    input.on("end", () => resolve(buffer.replace(/\r?\n$/, "")));
+    input.on("error", reject);
+    input.resume();
+  });
+}
+var confirmationOf = (doc, id) => String(doc?.title ?? "").trim() || id;
+var KINDS = {
+  lecture: {
+    segment: "lectures",
+    usage: 'studio lectures delete <course> <lecture> [--yes "<title>"]',
+    /** `GET …/lectures/{l}` answers with the manifest under `manifest`. */
+    titleOf: (doc) => doc?.manifest,
+    /** Said before the prompt, because it is what the author is agreeing to. */
+    goes: "the notes, the deck, the figures, the notes thread — and the published page, if it has one"
+  },
+  exercise: {
+    segment: "exercises",
+    usage: 'studio exercises delete <course> <exercise> [--yes "<title>"]',
+    titleOf: (doc) => doc?.exercise,
+    goes: "the questions and the key"
+  }
+};
+async function deleteItem(client, {
+  kind,
+  course,
+  id,
+  yes,
+  prompt = readLine2,
+  log = console.log,
+  out = process.stderr
+} = {}) {
+  const spec = KINDS[kind];
+  if (!spec) throw new CliError(`unknown kind: ${kind}`);
+  if (!course || !id) throw new CliError(`usage: ${spec.usage}`);
+  const at = `/courses/${enc(course)}/${spec.segment}/${enc(id)}`;
+  const got = await client.call("GET", at);
+  if (got.status === 404) throw new CliError(`no ${kind} ${course}/${id} on ${client.origin}`, 2);
+  const doc = expectOk(got, `GET ${course}/${id}`);
+  const confirmation = confirmationOf(spec.titleOf(doc), id);
+  log(`${course}/${id} — ${confirmation}`);
+  log(`  this removes ${spec.goes}.`);
+  log("  it cannot be undone from the studio; we can recover it for a year.");
+  let typed = yes;
+  if (typeof typed !== "string") {
+    out.write(`type the ${kind} title to confirm: `);
+    typed = await prompt();
+  }
+  if (String(typed ?? "").trim() !== confirmation) {
+    throw new CliError(`that is not the title of ${course}/${id}; nothing was deleted`);
+  }
+  const res = await client.call("DELETE", `${at}?confirm=${enc(confirmation)}`);
+  if (res.status === 409 && res.json?.error === "exercise_has_submissions") {
+    throw new CliError(
+      `${apiMessage(res)}
+  there is no --force: a submission is the only copy of a student's work.
+  close the exercise instead — set its due date and leave it where it is.`,
+      1
+    );
+  }
+  expectOk(res, `DELETE ${course}/${id}`);
+  log(`deleted ${kind} ${course}/${id}`);
+  return { course, kind, id, title: confirmation };
+}
+var lecturesDelete = (client, opts) => deleteItem(client, { ...opts, kind: "lecture" });
+var exercisesDelete = (client, opts) => deleteItem(client, { ...opts, kind: "exercise" });
+
 // studio/cli/src/notes.js
 var firstLine = (s) => String(s ?? "").split("\n")[0].trim();
 var clip2 = (s, n) => s.length <= n ? s : `${s.slice(0, n - 1)}…`;
@@ -19970,6 +20049,8 @@ var USAGE = `usage:
   studio exercises list  <course>                  [--json]
   studio exercises pull  [<course-dir>] [--course id]
   studio exercises push  <course-dir>/exercises/<x> [--course id]
+  studio exercises delete <course> <exercise>      [--yes "<title>"]
+  studio lectures delete <course> <lecture>        [--yes "<title>"]
   studio kit-path                                  where AGENTS.md and the demo format are
 
 global: --api http://127.0.0.1:8787   --user email   --token cst_…
@@ -20128,6 +20209,15 @@ ${USAGE}`);
   }
 }
 async function exercisesCommand(sub, rest2) {
+  if (sub === "delete") {
+    const { client: client2 } = await openCourse();
+    return exercisesDelete(client2, {
+      course: rest2[0] ?? args.course,
+      id: rest2[1],
+      yes: typeof args.yes === "string" ? args.yes : void 0,
+      log: console.log
+    });
+  }
   if (sub === "list") {
     const course2 = rest2[0] ?? args.course;
     if (!course2) throw new CliError("usage: studio exercises list <course>");
@@ -20151,6 +20241,21 @@ async function exercisesCommand(sub, rest2) {
       return exercisesPush(client, dirArg, common);
     default:
       throw new CliError(`unknown: studio exercises ${sub ?? ""}
+${USAGE}`);
+  }
+}
+async function lecturesCommand(sub, rest2) {
+  const { client } = await openCourse();
+  switch (sub) {
+    case "delete":
+      return lecturesDelete(client, {
+        course: rest2[0] ?? args.course,
+        id: rest2[1],
+        yes: typeof args.yes === "string" ? args.yes : void 0,
+        log: console.log
+      });
+    default:
+      throw new CliError(`unknown: studio lectures ${sub ?? ""}
 ${USAGE}`);
   }
 }
@@ -20263,6 +20368,9 @@ try {
       break;
     case "exercises":
       await exercisesCommand(rest[0], rest.slice(1));
+      break;
+    case "lectures":
+      await lecturesCommand(rest[0], rest.slice(1));
       break;
     case "demos":
       await demosCommand(rest[0], rest.slice(1));

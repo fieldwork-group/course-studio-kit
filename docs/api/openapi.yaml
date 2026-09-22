@@ -833,6 +833,42 @@ paths:
         '400': { $ref: '#/components/responses/invalidDocument' }
         '403': { $ref: '#/components/responses/forbidden' }
         '422': { $ref: '#/components/responses/unsafeMarkup' }
+    delete:
+      tags: [lectures]
+      operationId: deleteLecture
+      summary: Delete the lecture, and the published page with it.
+      description: |
+        **One verb that leaves nothing behind.** The draft prefix goes — the
+        manifest, both fragments, the figures, the data, the notes thread, the
+        publish jobs and the lock; the id leaves `course.lectures` under
+        `If-Match`; and if the lecture had been published, every object under
+        its site prefix goes too, both front pages are rewritten without it and
+        the CDN is purged for its paths and for both index pages. There is no
+        separate *unpublish*, which is why this reconciles the site itself.
+        Event `lecture.delete`.
+
+        Nothing is recoverable through the studio. The content bucket is
+        versioned and noncurrent versions live for a year, so a delete can be
+        undone by us and by nobody else; the site bucket is not versioned and
+        does not need to be, since publishing the restored lecture puts its
+        pages back.
+      parameters:
+        - name: confirm
+          in: query
+          required: true
+          description: >-
+            The lecture **title** again, trimmed and compared to nothing else.
+            A manifest with no title takes the lecture's id, which — unlike a
+            course's — is the folder name a person chose. Anything else is
+            `400 confirm_required`, whose body carries the string that was
+            wanted as `confirm`.
+          schema: { type: string }
+      responses:
+        '204':
+          description: Deleted.
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
 
   /courses/{c}/lectures/{l}/notes:
     parameters:
@@ -1758,14 +1794,28 @@ paths:
       summary: Remove the exercise — unless somebody has submitted.
       description: |
         Deletes the three objects and takes the id out of `course.exercises`.
+        Nothing on the site to reconcile: no exercise key is ever copied there.
 
         **`409 exercise_has_submissions` while any student has submitted
         against it**: a submission is the only copy of a student's work, and an
         exercise deleted out from under one leaves a grade nobody can explain.
-        There is no `?force`. Event `exercise.delete`.
+        The body carries `submitted` — how many students, which is the fact the
+        author acts on. There is no `?force`. The course's **test student** is
+        not one of them: their trial run is the author's own and is deleted
+        with the exercise. Event `exercise.delete`.
+      parameters:
+        - name: confirm
+          in: query
+          required: true
+          description: >-
+            The exercise **title** again, the rule `DELETE /courses/{c}` has.
+            Checked before the students' prefix is read, so an unconfirmed
+            request never lists the class. `400 confirm_required` otherwise.
+          schema: { type: string }
       responses:
         '204':
           description: Deleted.
+        '400': { $ref: '#/components/responses/badRequest' }
         '403': { $ref: '#/components/responses/forbidden' }
         '404': { $ref: '#/components/responses/notFound' }
         '409':
