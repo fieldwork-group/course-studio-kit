@@ -49,21 +49,28 @@ any folder inside it — so nothing else has to hold it. An exported
 | `init [<dir>]` | the folder above: prompt, verify, `.env`, `.studio/config.json`, `.gitignore` | 1 refused or already tracked |
 | `kit-path` | where this kit is installed, one line | 2 not running from the kit |
 | `status [<dir>] [--course id] [--json]` | who the credential says you are, then per lecture: lock holder, open notes, unpulled changes, last event, published | |
-| `pull <course> [<into-dir>]` | the whole course into `courses/<id>/` — guides, demos, every lecture | 2 no such course |
+| `pull <course> [<into-dir>]` | the whole course into `courses/<id>/` — guides, demos, exercises, every lecture | 2 no such course |
 | `pull <lecture-dir>` | one lecture, and the demos it wires | 2 no such lecture |
 | `push [<lecture-dir>]` | the working copy back, with the ETags `pull` recorded; never merges | 2 never pulled · 3 conflict, pull first |
 | `notes list \| add \| reply \| done \| reopen \| delete` | the author-notes thread — where an agent asks instead of guessing | 2 no such note |
-| `demos list \| pull \| push` | the course's demos, three files each under `courses/<id>/demos/<slug>/` | 2 no `demo.json` · 3 conflict |
+| `demos list \| pull \| push` | the course's demos, three files each under `courses/<id>/demos/<slug>/`; `list` shows each one's week and whether it was inherited from the lectures that wire it | 2 no `demo.json` · 3 conflict |
+| `demos publish <course> <slug>` | put one demo on the course site on its own: its two files, the page under `d/<slug>/`, and the course index | 2 no such demo |
+| `exercises list \| pull \| push` | the course's exercise sheets, three files each under `courses/<id>/exercises/<x>/` — the questions, the private key, the manifest; a `viewer` is refused the key | 2 no `exercise.json` · 3 conflict |
+| `exercises delete <course> <exercise> [--yes "<title>"]` | delete a sheet — the questions and the key; asks for the title; refused once a student has answered it | 1 wrong title, or answered · 2 no such exercise |
+| `lectures delete <course> <lecture> [--yes "<title>"]` | delete a lecture — notes, deck, figures, the notes thread, and its published page; asks for the title | 1 wrong title · 2 no such lecture |
 | `publish [<lecture-dir>]` | publish and wait for the job | 4 job failed |
 | `import <lecture-dir>… [--course id] [--title "…"]` | first-time push of a lecture folder that the studio does not have yet | |
 | `login [--api <origin>]` | sign in with a browser instead of a token, cached in `~/.config/studio/` | 1 refused or timed out |
 | `tokens create \| list \| revoke` | mint and revoke access tokens — **a signed-in session, not a token** | |
+| `address set <course> <address>` | the course's published address, once, before the first publish — **a signed-in session** | 1 broke a rule · 2 taken, or already published |
 | `reader set \| show <course>` | the password students type to open the published notes — **a signed-in session** | |
+| `roster list \| add \| remove <course>` | the course's students — who may sign in to a workspace and hand in a sheet; each is listed with the id their work is filed under | 1 not on that roster |
 | `access list \| grant \| revoke \| limit` | who may see which course — **administrators, and a session** | |
 
-The last three refuse an access token with `session_required`, and say so in
-words. That is deliberate: a held credential must not be able to mint its
-successor, widen its owner's reach, or change the door students walk through.
+`tokens`, `address`, `reader` and `access` refuse an access token with
+`session_required`, and say so in words. That is deliberate: a held credential
+must not be able to mint its successor, widen its owner's reach, or change the
+door students walk through.
 
 `--api <origin>` names the studio; after `init` it comes from
 `.studio/config.json` and you do not pass it again.
