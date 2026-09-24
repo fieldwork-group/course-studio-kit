@@ -513,6 +513,69 @@ paths:
         '412': { $ref: '#/components/responses/precondition' }
         '413': { $ref: '#/components/responses/tooLarge' }
 
+  /courses/{c}/weeks:
+    parameters:
+      - $ref: '#/components/parameters/course'
+    put:
+      tags: [courses]
+      operationId: putCourseWeeks
+      summary: The weeks the course declares.
+      description: |
+        A week exists because the lecturer declared it, not only because
+        something carries its number: that is what lets a term be planned
+        before it holds anything, and what gives a heading a name. The whole
+        list is written at once and **sorted by `n`**, so the stored order is
+        never a question.
+
+        A week is a **heading, not a container** — nothing here names an item,
+        and an item's `week` stays on its own manifest. Removing a week whose
+        number a lecture or an exercise still carries is `409 week_in_use`,
+        naming them: moving the content is the lecturer's act and not a side
+        effect of deleting a heading. A declared week that nothing carries
+        removes cleanly.
+
+        `If-Match` is the course document's ETag and is optional; a stale one
+        is a `412` carrying who wrote last. Event `weeks.save`, whose summary
+        names the change (`week 5 added`, `week 3 titled`, `week 2 removed`).
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [weeks]
+              properties:
+                weeks:
+                  type: array
+                  items: { $ref: '#/components/schemas/CourseWeek' }
+      responses:
+        '200':
+          description: Saved, sorted by `n`.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  course: { type: string }
+                  weeks:
+                    type: array
+                    items: { $ref: '#/components/schemas/CourseWeek' }
+                  etag: { type: string }
+                  versionId: { type: string }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409':
+          description: >-
+            `week_in_use` — a week being removed still holds lectures or
+            exercises, listed in `items`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '412': { $ref: '#/components/responses/precondition' }
+
   /courses/{c}/theme:
     parameters:
       - $ref: '#/components/parameters/course'
@@ -762,6 +825,58 @@ paths:
         '200': { $ref: '#/components/responses/css' }
         '404': { $ref: '#/components/responses/notFound' }
 
+  /courses/{c}/lectures:
+    parameters:
+      - $ref: '#/components/parameters/course'
+    post:
+      tags: [lectures]
+      operationId: createLecture
+      summary: Start a lecture — a title, and the server invents the rest.
+      description: |
+        `{ title, week? }` → `201 { manifest, etag }`, added 2026-09-24 so a
+        lecture can be started from the browser under the week it belongs to.
+
+        **The id is generated** — eight characters of lower-cased Crockford
+        base32, as an exercise's and a course's are — and a body carrying `id`
+        is `400 invalid_manifest`; so is one carrying any field but `title` and
+        `week`. A caller that already holds a manifest and an id of its own
+        wants `PUT /courses/{c}/lectures/{l}`, which writes the whole lecture.
+
+        `number` is the largest any lecture of the course carries plus one (1
+        for a course with none), and the author changes it in the settings
+        drawer. `docTitle` is composed from the number, the title and the
+        course's own title. `notes.html` starts as a `header.notes-head`
+        holding the title as its `h1` and nothing after it — no section and no
+        placeholder paragraph.
+
+        The fragment is written first and the id is appended to
+        `course.lectures` last, under `If-Match` on the course document, so a
+        failure can never leave the course listing a lecture whose prefix is
+        empty. Event `lecture.create`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string, description: "the lecture's title, in the course's language" }
+                week: { type: [integer, 'null'], minimum: 1, maximum: 52 }
+      responses:
+        '201':
+          description: Started.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  manifest: { $ref: '#/components/schemas/Lecture' }
+                  etag: { type: string, description: "the manifest's" }
+        '400': { $ref: '#/components/responses/invalidDocument' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
   /courses/{c}/lectures/{l}:
     parameters:
       - $ref: '#/components/parameters/course'
@@ -804,9 +919,10 @@ paths:
       description: |
         `studio import`: the manifest, the notes fragment and optionally the
         deck fragment in one write, appended to `course.json`'s lecture order
-        if it is new. There is deliberately no `POST /courses/{c}/lectures` —
-        that would be a second way to end up with notes and no manifest.
-        Event `import`.
+        if it is new. This is the route for a caller that already **has** a
+        lecture and an id for it; `POST /courses/{c}/lectures` is the other
+        one, for a caller that has only a title and wants the server to invent
+        the id, the number and an empty document. Event `import`.
       requestBody:
         required: true
         content:
@@ -2853,6 +2969,70 @@ paths:
         '409':
           description: demo_in_use — the body carries `usedIn`, the lectures that wire it
 
+  /courses/{c}/demos/{slug}/publish:
+    post:
+      tags: [publish, demos]
+      operationId: publishDemo
+      summary: Publish one demo — the file, its page, and the course index.
+      description: |
+        **A demo is published on purpose by its author, like a lecture**, and
+        never as a side effect of a lecture publish (that one copies the file
+        of a demo the lecture wires, under the lecture, and writes no page).
+
+        Synchronous: there is no render Lambda, no job record and no PDF, so
+        this answers `200` and not `202` and there is nothing to poll. It
+        writes three keys and then rewrites the course's front page so the
+        demo shows under its week:
+
+        ```
+        <address>/demos/<slug>/demo.html    the file, under the edge's demo CSP
+        <address>/demos/<slug>/still.png    what prints
+        <address>/d/<slug>/index.html       the page around it
+        ```
+
+        The page lives under `d/` and not `demos/` because the edge sandboxes
+        every response under a folder named `demos`, and this page loads the
+        platform bundle.
+
+        The same two refusals as a lecture publish, in the same order: `409
+        address_required`, then `409 reader_password_required`. A third,
+        `409 demo_file_required`, is this route's own — a demo with no
+        `demo.html` would get a page framing a 404.
+
+        The first publish of anything in a course — a demo as much as a
+        lecture — stamps `course.publishedFirst`, which fixes the address:
+        a student holds `/<address>/d/<slug>/` from here on.
+
+        Event `demo.publish`. There is **no MCP tool for it**: the MCP asks
+        before publishing anything, and a demo publish is a click on the
+        demo's page in the studio.
+      parameters:
+        - { $ref: '#/components/parameters/course' }
+        - { $ref: '#/components/parameters/slug' }
+      responses:
+        '200':
+          description: Published.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [slug, url, keys, published]
+                properties:
+                  slug: { type: string }
+                  url: { type: string, description: 'the demo page a student opens' }
+                  keys: { type: array, items: { type: string } }
+                  published: { $ref: '#/components/schemas/Published' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409':
+          description: >-
+            `address_required` — the course has no published address; then
+            `reader_password_required`; then `demo_file_required` — the demo
+            has no `demo.html` to publish.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /courses/{c}/demos/{slug}/demo.html:
     get:
       summary: The draft document, served with the demo CSP and no x-frame-options
@@ -3631,6 +3811,23 @@ components:
           description: height ÷ width; the frame is sized from it. Default 0.5.
           minimum: 0.05
           maximum: 3
+        week:
+          type: [integer, 'null']
+          description: >-
+            The teaching week this demo is listed under, 1-52, or null. A demo
+            with none of its own **inherits** the earliest week of the lectures
+            that wire it; the listing answers the result as `week` and says
+            which it was in `weekFrom`.
+          minimum: 1
+          maximum: 52
+        published:
+          type: [object, 'null']
+          readOnly: true
+          description: written by `POST …/demos/{slug}/publish`; a client body carrying it is a 400
+          properties:
+            at: { type: string, format: date-time }
+            version: { type: [string, 'null'] }
+          additionalProperties: false
         author: { type: string }
         version: { type: string }
 
@@ -3643,6 +3840,13 @@ components:
               type: array
               description: The lectures whose manifest wires this demo.
               items: { type: string }
+            weekFrom:
+              type: [string, 'null']
+              enum: [demo, lecture, null]
+              description: >-
+                Where the `week` above came from — `demo` when the manifest
+                carries one, `lecture` when it was inherited from the earliest
+                wiring lecture, null when there is neither.
             hasHtml: { type: boolean }
             hasStill: { type: boolean }
             etag: { type: string }
@@ -3776,6 +3980,35 @@ components:
           type: array
           items: { type: string }
           description: "the lecture ids in the lecturer's own order"
+        exercises:
+          type: array
+          items: { type: string }
+          description: "the exercise ids in the lecturer's own order"
+        weeks:
+          type: array
+          items: { $ref: '#/components/schemas/CourseWeek' }
+          description: |
+            The weeks this course declares (2026-09-24), ascending by `n`. A
+            declaration adds *existence* — a week can be made before anything
+            is in it, which is how a term is planned — and a *title*. It is a
+            heading and not a container: nothing here names an item, and an
+            item's own `week` is on its own manifest. Written by
+            `PUT /courses/{c}/weeks`.
+
+    CourseWeek:
+      type: object
+      description: one week a course declares — its number, and its title when it has one
+      required: [n]
+      additionalProperties: false
+      properties:
+        n:
+          type: integer
+          minimum: 1
+          maximum: 52
+          description: the week's number, which is its identity; unique within the course
+        title:
+          type: [string, 'null']
+          description: "the week's name, in the course's language; null until somebody writes one"
 
     Lecture:
       type: object

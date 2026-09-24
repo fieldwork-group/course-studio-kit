@@ -17809,8 +17809,12 @@ var STRINGS = {
     /** …and what that root says when nothing is published yet */
     noCourses: "עדיין לא פורסם כאן אף קורס.",
     /** a demo, as the platform names one: the ◆ marker in the TOC, the
-     *  frame's title when the manifest carries none *(bundle)* */
+     *  frame's title when the manifest carries none *(bundle)*, and the word
+     *  where a lecture row on the index page has its number */
     demo: "הדגמה",
+    /** the heading on a published demo's own page over the lectures that
+     *  wire it (2026-09-24) */
+    usedIn: "מופיעה בהרצאות",
     /** the demo frame's play button, before the glyph *(bundle)* */
     play: "הפעל",
     /** …and once it is running *(bundle)* */
@@ -17835,6 +17839,7 @@ var STRINGS = {
     unscheduled: "Unscheduled",
     noCourses: "No course has been published here yet.",
     demo: "Demo",
+    usedIn: "Appears in these lectures",
     play: "Play",
     pause: "Pause",
     reset: "Reset",
@@ -18358,10 +18363,23 @@ async function demosList(client, { course, json = false, log = console.log } = {
   for (const d of demos) {
     const used = d.usedIn?.length ? d.usedIn.join(", ") : "—";
     const missing = [!d.hasHtml && "demo.html", !d.hasStill && "still.png"].filter(Boolean);
+    const week = d.week == null ? null : `week ${d.week}${d.weekFrom === "lecture" ? " (from lectures)" : ""}`;
     log(`${d.slug.padEnd(24)} ${d.title}`);
-    log(`  used in ${used}${d.aspect ? ` · aspect ${d.aspect}` : ""}${missing.length ? ` · missing ${missing.join(", ")}` : ""}`);
+    log(`  used in ${used}${week ? ` · ${week}` : ""}${d.published?.at ? ` · published ${d.published.at}` : " · draft"}${d.aspect ? ` · aspect ${d.aspect}` : ""}${missing.length ? ` · missing ${missing.join(", ")}` : ""}`);
   }
   return demos;
+}
+async function demosPublish(client, { course, slug, log = console.log } = {}) {
+  if (!SLUG.test(String(slug ?? ""))) {
+    throw new CliError("usage: studio demos publish <course> <slug>");
+  }
+  const res = await client.call("POST", `/courses/${course}/demos/${slug}/publish`);
+  if (res.status === 404) throw new CliError(`no demo ${course}/${slug} to publish`, 2);
+  const body = expectOk(res, `POST ${course}/demos/${slug}/publish`);
+  log(`published ${course}/${slug} at ${body.published?.at ?? "?"}`);
+  for (const k of body.keys ?? []) log(`  ${k}`);
+  log(`  ${body.url}`);
+  return body;
 }
 async function pullDemo(client, { course, slug, dir, log = console.log }) {
   const etags = {};
@@ -20046,6 +20064,7 @@ var USAGE = `usage:
   studio demos   list  [--course id] [--json]
   studio demos   pull  [<course-dir>] [--course id]
   studio demos   push  <course-dir>/demos/<slug> [--course id]
+  studio demos   publish <course> <slug>          the file, its page and the index
   studio exercises list  <course>                  [--json]
   studio exercises pull  [<course-dir>] [--course id]
   studio exercises push  <course-dir>/exercises/<x> [--course id]
@@ -20186,6 +20205,12 @@ ${USAGE}`);
   }
 }
 async function demosCommand(sub, rest2) {
+  if (sub === "publish") {
+    const course2 = rest2[0] ?? args.course;
+    if (!course2 || !rest2[1]) throw new CliError("usage: studio demos publish <course> <slug>");
+    const { client: client2 } = await openCourse();
+    return demosPublish(client2, { course: course2, slug: rest2[1], log: console.log });
+  }
   const dirArg = rest2[0];
   const near = sub === "push" && dirArg ? path13.resolve(dirArg, "..", "..") : dirArg ?? ".";
   const { client, course } = await openLecture({

@@ -120,6 +120,36 @@ Three things, stored separately:
 - **the assets** — `figures/*` and `data/*`, referenced from the fragment by
   relative path.
 
+**A course declares its weeks, and an item carries its own.** `course.json`
+lists them (`weeks: [{ n, title }]`, 1 to 52, sorted and unique), which is what
+makes a week exist before anything is in it and what gives its heading a name;
+setting *which* week a lecture or an exercise is in is a field on that item's
+own manifest (`week`), never a list you add it to. So put a lecture in week 3
+by writing `week: 3` on its `lecture.json`, and name week 3 with
+`PUT /courses/{c}/weeks` — which is a whole-list write, and refuses to remove a
+week something still carries.
+
+**A demo has a week too, and usually does not need one.** `demo.json` takes
+the same `week`, but a demo with none inherits the **earliest week of the
+lectures that wire it** — so wiring a demo into lecture 2 files it under week 2
+and there is nothing for you to set. `GET /courses/{c}/demos` answers the
+result as `week` with `weekFrom` saying whether it was the demo's own number or
+an inherited one; write a `week` on a demo only when the lecturer wants it
+somewhere the wiring does not put it.
+**A new lecture can have a generated id.** `POST /courses/{c}/lectures` with
+`{ title, week? }` answers `201 { manifest, etag }`: the server draws the id
+(eight characters, as a course's and an exercise's are), numbers the lecture
+the next one, composes its `docTitle` and writes a `notes.html` that is a
+`header.notes-head` with the title as its `h1` and nothing after it — which is
+then yours to fill with the edit loop below. A body carrying `id`, or any field
+but `title` and `week`, is `400 invalid_manifest`. Use it when you are starting
+a lecture from nothing; use `PUT /courses/{c}/lectures/{l}` when you already
+have the whole thing and an id you mean to keep, which is what `studio import`
+does. There is no `studio_*` tool for the `POST` and it needs none: through the
+connector, a model that wants a lecture writes one with the id it chose, and
+the generated id is for the studio's own *Add* menu and for a caller over
+HTTP.
+
 **Deleting one is a single verb and it leaves nothing behind** — the draft,
 and the published page too, because there is no *unpublish*. `studio_delete`
 does it, the title has to be repeated exactly as it reads, and it cannot be
@@ -394,8 +424,17 @@ demo's own `demo.json` so a published page needs no API to size the frame.
 `docs/demos/format.md` is the format; write a demo when the course has none
 that shows the point.
 
-`published` is not yours. The publish route writes it; a manifest body carrying
-it is a `400`, and the stored value is kept for you when you leave it out.
+`published` is not yours, on a lecture or on a demo. The publish route writes
+it; a body carrying it is a `400`, and the stored value is kept for you when
+you leave it out.
+
+**Publishing a demo is the author's click, not a tool call.** A demo goes on
+the course site on purpose — `POST /courses/{c}/demos/{slug}/publish`, from the
+demo's page in the studio or from `studio demos publish` — and never as a side
+effect of publishing a lecture, which copies the file of a demo it wires under
+that lecture and writes no page and no index row. There is deliberately no MCP
+tool for it: what students see is not a decision a model makes. Write the
+draft, say it is ready, and let the lecturer press the button.
 
 ## When you are not sure
 

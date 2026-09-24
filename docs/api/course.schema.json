@@ -106,6 +106,41 @@
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"
       },
       "uniqueItems": true
+    },
+    "weeks": {
+      "type": "array",
+      "description": "the weeks this course declares, ascending by `n`; a week with no items still shows in the studio",
+      "items": {
+        "$ref": "#/$defs/weekDecl"
+      }
+    }
+  },
+  "$defs": {
+    "weekNumber": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 52,
+      "description": "a teaching week of the course, 1-52"
+    },
+    "weekDecl": {
+      "type": "object",
+      "description": "a week the course declares: its number, and its title when it has one",
+      "required": [
+        "n"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "n": {
+          "$ref": "#/$defs/weekNumber"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "the week's name, in the course's language"
+        }
+      }
     }
   }
 }

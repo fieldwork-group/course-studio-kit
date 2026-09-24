@@ -19,7 +19,7 @@ A demo is a folder of three files named exactly this way:
 |---|---|---|
 | `demo.html` | a complete HTML document; every script, style, font, image and sound inlined or a `data:` URI; **no external request of any kind** | 2 MB |
 | `still.png` | the **drawing**, and not the controls around it: what stands for the demo in print and until it is ready. A handout with a row of dead sliders under every figure is a handout that looks broken | 1 MB |
-| `demo.json` | `{ slug, title, description?, aspect?, author?, version? }` | 4 KB |
+| `demo.json` | `{ slug, title, description?, aspect?, week?, author?, version? }` | 4 KB |
 
 ```
 my-demo/
@@ -45,6 +45,7 @@ different height at runtime (below) and is capped the same way.
   "title": "Damped oscillator",
   "description": "A mass on a spring with adjustable damping.",
   "aspect": 0.5,
+  "week": 2,
   "author": "R. Feynman",
   "version": "1.0.0"
 }
@@ -52,6 +53,20 @@ different height at runtime (below) and is capped the same way.
 
 Only `title` is required. Anything else in the file is ignored — a field
 nobody defined is a field nobody will maintain.
+
+`week` is the teaching week the demo is listed under, 1 to 52, or `null`. It is
+the same field a lecture and an exercise carry, and it is what puts the demo
+under a heading in the course, on the course's published page and in a
+student's workspace. **A demo with no week of its own inherits the earliest
+week of the lectures that wire it**, so a demo used in weeks 2 and 3 shows
+under week 2 without anybody setting anything; the listing answers the result
+as `week` and says which of the two it was in `weekFrom` (`"demo"`,
+`"lecture"`, or `null` when there is neither). The stored file is not touched
+by that — the inheritance is computed when the library is read.
+
+`published` is written by the publish route and is **refused in a body**: a
+`PUT` carrying it is a `400 read_only`. It is `{ at, version }` and it says
+that this demo is on the course site.
 
 ## What the page does with it
 
@@ -303,6 +318,7 @@ check; there is no other.
 studio demos list                                   # the course's library
 studio demos pull  courses/<course>                 # every demo, three files each
 studio demos push  courses/<course>/demos/<slug>    # one demo, back up
+studio demos publish <course> <slug>                # put it on the course site
 ```
 
 `studio pull <lecture-dir>` also writes the demos that lecture wires into
@@ -312,11 +328,12 @@ with the demo running.
 **Over the API**, which is what an agent uses:
 
 ```
-PUT /courses/{c}/demos/{slug}              the demo.json fields
-PUT /courses/{c}/demos/{slug}/demo.html    text/html, ≤ 2 MB
-PUT /courses/{c}/demos/{slug}/still.png    image/png, ≤ 1 MB
-GET /courses/{c}/demos                     the library, with usedIn per demo
-DELETE /courses/{c}/demos/{slug}           409 while a lecture wires it
+PUT  /courses/{c}/demos/{slug}              the demo.json fields
+PUT  /courses/{c}/demos/{slug}/demo.html    text/html, ≤ 2 MB
+PUT  /courses/{c}/demos/{slug}/still.png    image/png, ≤ 1 MB
+GET  /courses/{c}/demos                     the library, with usedIn and week per demo
+POST /courses/{c}/demos/{slug}/publish      put it on the course site
+DELETE /courses/{c}/demos/{slug}            409 while a lecture wires it
 ```
 
 `demo.json` must exist before either file: a file with no manifest beside it is
@@ -338,6 +355,29 @@ split is why a demo can be swapped without touching a word of the lecture.
 
 Publishing a lecture copies `demo.html` and `still.png` for **the demos it
 actually wires**, and nothing for the rest of the library.
+
+## Publishing a demo on its own
+
+A demo is a thing in the course, and it goes on the site because its author
+said so — never as a side effect of a lecture publish. *Course page → the
+demo's row → Publish*, or `studio demos publish <course> <slug>`, or `POST
+/courses/{c}/demos/{slug}/publish`. It writes three files and rewrites the
+course's own index so the demo shows under its week:
+
+```
+<address>/demos/<slug>/demo.html    the file, under the no-network demo policy
+<address>/demos/<slug>/still.png
+<address>/d/<slug>/index.html       the page around it
+```
+
+**The page is under `d/` and not `demos/` on purpose.** Every response under a
+folder named `demos` is served with the demo CSP, which allows no network and
+no origin at all — right for the file, impossible for a page that has to load
+the platform's own bundle to mount it. The page reaches the file with
+`../../demos/<slug>/demo.html`, same origin, so the class password the reader
+already typed is what opens both.
+
+There is no publish tool in the MCP: publishing is the author's click.
 
 ## The rules, in one place
 
