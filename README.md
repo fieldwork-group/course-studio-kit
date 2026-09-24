@@ -137,12 +137,23 @@ curl -H "authorization: Bearer $STUDIO_TOKEN" \
      "$STUDIO/courses/<course>/lectures/<lecture>/preview?mode=notes"
 curl -X POST -H "authorization: Bearer $STUDIO_TOKEN" \
      "$STUDIO/courses/<course>/lectures/<lecture>/publish"
+
+# start a lecture from nothing: the server draws the id and the next number
+curl -X POST "$STUDIO/courses/<course>/lectures" \
+     -H "authorization: Bearer $STUDIO_TOKEN" -H 'content-type: application/json' \
+     -d '{"title":"…","week":2}'
+
+# a demo on a page of its own, under its week on the course's index
+curl -X POST -H "authorization: Bearer $STUDIO_TOKEN" \
+     "$STUDIO/courses/<course>/demos/<slug>/publish"
 ```
 
 A lecture is three things stored separately: the **fragment** (`notes.html`,
 and `slides.html` when there is a deck — a flat list of blocks, no page around
-it), the **manifest** (`lecture.json`: numbers, titles, which demo mounts where)
-and the **assets** (figures and data). The studio renders the page, the deck and
+it), the **manifest** (`lecture.json`: numbers, titles, the week, which demo
+mounts where) and the **assets** (figures and data). A course groups its
+lectures, exercises and demos by **week**: `course.json` declares the weeks
+and their titles, and each item carries its own number. The studio renders the page, the deck and
 the PDF from those. What a fragment may contain is
 [`docs/api/vocabulary.md`](docs/api/vocabulary.md); the schema is also the
 sanitiser, so a save carrying markup the studio would never produce is refused

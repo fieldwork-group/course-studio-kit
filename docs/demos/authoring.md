@@ -132,7 +132,7 @@ SLUG=my-demo
 
 curl -X PUT "$STUDIO/courses/$COURSE/demos/$SLUG" \
      -H "authorization: Bearer $STUDIO_TOKEN" -H 'content-type: application/json' \
-     -d '{"title":"My demo","description":"…","aspect":0.5}'
+     -d '{"title":"My demo","description":"…","aspect":0.5,"week":2}'
 
 curl -X PUT "$STUDIO/courses/$COURSE/demos/$SLUG/demo.html" \
      -H "authorization: Bearer $STUDIO_TOKEN" -H 'content-type: text/html' \
@@ -146,6 +146,12 @@ curl -X PUT "$STUDIO/courses/$COURSE/demos/$SLUG/still.png" \
 The manifest first: a file with no `demo.json` beside it is a demo nothing can
 list, name or delete, and the route refuses it. Over the cap the answer is `413`;
 the wrong content type is a `415`.
+
+`week` is optional. It is the teaching week the demo is listed under on the
+course page — the same field a lecture carries — and a demo with none inherits
+the earliest week of the lectures that wire it, so most demos never need it.
+In the studio the same thing is the `+` on a week's heading → *Demo*, which
+opens the library on its form with the week already filled in.
 
 ## 5. Wire it into a lecture
 
@@ -173,6 +179,20 @@ or *course demo*, and a select of the library with the stills.
 
 Publishing the lecture copies your two files beside it. Only wired demos are
 copied, and only those two files.
+
+### Or give it a page of its own
+
+A demo does not have to sit inside a lecture to reach students. Every demo has
+a page in the studio — the course page lists it under its week, and the
+library's cards link to it — with the demo running, its wiring, its settings
+and **Publish**. Publishing a demo on its own writes the file to
+`<address>/demos/<slug>/` and a page around it at `<address>/d/<slug>/`, and
+lists the demo on the course's own index under its week; a student's workspace
+links it the way it links a published lecture. It is the author's click, or
+`studio demos publish <course> <slug>`, or
+`POST /courses/{c}/demos/{slug}/publish` — never a side effect of a lecture
+publish, and there is no MCP tool for it. The keys and the reason the page is
+not under `demos/` are in [`format.md`](format.md).
 
 ## 6. Contribute it to the gallery
 

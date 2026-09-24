@@ -151,6 +151,10 @@ export function staticCheck(dir, { stillPending = false } = {}) {
   else if (!SLUG.test(manifest.slug)) note(`slug "${manifest.slug}" does not match ${SLUG}`);
   else if (manifest.slug !== slug) note(`slug "${manifest.slug}" is not the folder name "${slug}"`);
   if (!manifest.title || typeof manifest.title !== 'string') note('demo.json has no title');
+  if (manifest.week !== undefined && manifest.week !== null
+      && !(Number.isInteger(manifest.week) && manifest.week >= 1 && manifest.week <= 52)) {
+    note(`week ${JSON.stringify(manifest.week)} is not a teaching week, 1 to 52, or null`);
+  }
   if (manifest.aspect !== undefined && !(Number(manifest.aspect) > 0 && Number(manifest.aspect) <= 4)) {
     note(`aspect ${manifest.aspect} is not a ratio between 0 and 4 (height ÷ width)`);
   }
