@@ -225,8 +225,12 @@ Four things about that `PUT`:
   current `etag`, who wrote it and when. Do not retry the same body: `GET`
   again, re-apply your change to the new text, and save with the new ETag.
 - **`x-changed-blocks`** is a comma-separated list of the `data-id`s you
-  touched. It becomes the summary in the history, which is how a person later
-  sees what you did.
+  touched. The server describes each one in the lecture's history — its
+  section, what kind of block it is and the start of its text, or that it was
+  deleted — which is how a person later sees what you did. Without the header
+  the save reads as "the whole document". `GET …/lectures/{l}/versions` (the
+  MCP tool `studio_history`) gives the history back, each version with those
+  `changes` and a one-line `summary`.
 
 Then look at it, and publish:
 

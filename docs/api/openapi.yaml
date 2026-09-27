@@ -1111,7 +1111,23 @@ paths:
     get:
       tags: [lectures]
       operationId: listVersions
-      summary: Every stored version of both documents, joined with the event that wrote it.
+      summary: Every stored version of both documents, described by the lecture's history.
+      description: |
+        The store's own versions of `notes.html` and `slides.html`, joined on
+        the version id with the lecture's `history.json` — who made each one,
+        when, and what changed. One read of that file and one version listing
+        per document; the event log is not read (it was, until 2026-09-27, and
+        that was ten to twenty seconds on a busy tenant).
+
+        `notes` and `slides` are one entry per version, newest first, in the
+        shape they always had, plus `changes` and `session`. `summary` is an
+        English sentence built from the changes — `§5 Mass on a spring ·
+        paragraph, deleted result` — never a list of block ids. `sessions`
+        groups the saves the way the studio's panel shows them (one author,
+        one door, saves at most ten minutes apart), newest first; `loose` is
+        the versions no session describes — written before the history
+        existed, or whose description failed to write. A loose version is
+        still a version: restore takes it like any other.
       responses:
         '200':
           description: The history.
@@ -1126,6 +1142,24 @@ paths:
                   slides:
                     type: array
                     items: { $ref: '#/components/schemas/Version' }
+                  sessions:
+                    type: object
+                    properties:
+                      notes:
+                        type: array
+                        items: { $ref: '#/components/schemas/VersionSession' }
+                      slides:
+                        type: array
+                        items: { $ref: '#/components/schemas/VersionSession' }
+                  loose:
+                    type: object
+                    properties:
+                      notes:
+                        type: array
+                        items: { $ref: '#/components/schemas/LooseVersion' }
+                      slides:
+                        type: array
+                        items: { $ref: '#/components/schemas/LooseVersion' }
 
   /courses/{c}/lectures/{l}/restore:
     parameters:
@@ -4334,8 +4368,72 @@ components:
         size: { type: integer }
         actor: { type: [string, 'null'] }
         ts: { type: [string, 'null'], format: date-time }
-        action: { type: [string, 'null'] }
-        summary: { type: [string, 'null'] }
+        action:
+          type: [string, 'null']
+          description: '`notes.save`, `slides.save`, `restore`, `import` or `lecture.create`; null for a version nothing describes'
+        summary:
+          type: [string, 'null']
+          description: 'what changed, as an English sentence: `§5 Mass on a spring · paragraph, result`, `whole document`, `notes restored from <versionId>`'
+        via:
+          type: [object, 'null']
+          description: '`{token, label}` when the save came through an access token; `{connector}` through /mcp'
+        changes:
+          type: [array, 'null']
+          description: 'the blocks the save changed, at most 20 (see `more`); empty for a whole-document save; null when no session describes this version'
+          items: { $ref: '#/components/schemas/VersionChange' }
+        more: { type: integer, description: 'changed blocks the cap left out' }
+        restoredFrom: { type: string, description: 'a restore: the version it copied' }
+        session: { type: [string, 'null'], description: 'the id of the session this save belongs to' }
+
+    VersionChange:
+      type: object
+      properties:
+        id: { type: string, description: 'the block''s data-id' }
+        kind: { type: string, description: '`paragraph`, `result`, `list`, `figure`, `demo`, `heading`, … — a key, not a word' }
+        section:
+          type: [object, 'null']
+          description: 'the enclosing section as its heading shows it, `{ n, title }`; null for the masthead; on a deck the slide''s position and first heading'
+          properties:
+            n: { type: [integer, string, 'null'] }
+            title: { type: [string, 'null'] }
+        text: { type: string, description: 'the block''s text, about 80 characters cut on a word; each formula is one U+FFFC' }
+        gone: { type: boolean, description: 'deleted by this save; kind, section and text are what it last was' }
+
+    VersionSession:
+      type: object
+      properties:
+        id: { type: string }
+        doc: { type: string, enum: [notes, slides] }
+        action: { type: string, enum: [edit, restore, import, create] }
+        actor: { type: [string, 'null'] }
+        via: { type: [object, 'null'] }
+        start: { type: string, format: date-time }
+        end: { type: string, format: date-time }
+        saves:
+          type: array
+          description: newest first; only saves whose version still exists
+          items:
+            type: object
+            properties:
+              versionId: { type: string }
+              etag: { type: [string, 'null'] }
+              ts: { type: string, format: date-time }
+              bytes: { type: [integer, 'null'] }
+              size: { type: integer }
+              changes:
+                type: array
+                items: { $ref: '#/components/schemas/VersionChange' }
+              more: { type: integer }
+              restoredFrom: { type: string }
+
+    LooseVersion:
+      type: object
+      properties:
+        versionId: { type: string }
+        lastModified: { type: string, format: date-time }
+        etag: { type: string }
+        size: { type: integer }
+        ts: { type: string, format: date-time }
 
     Lock:
       type: [object, 'null']
