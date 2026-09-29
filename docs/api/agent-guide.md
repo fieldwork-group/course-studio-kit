@@ -164,9 +164,13 @@ between a lecture that fits it and one that has to be rewritten: which symbol
 means which quantity, which sign convention the board uses, which word the
 course has already chosen for a term that has more than one.
 
-`groups` in `GET /me` tells you what the rest of the API will allow. `authors`
-writes; `viewers` reads everything, including drafts, and is refused every
-non-GET.
+`groups` and `courses` in `GET /me` tell you what the rest of the API will
+allow. On each course the person is an `author` — everything — or a `ta`: a
+teaching assistant, who reads the lectures (drafts too), writes the exercises
+(questions, key, dates) and does the grading, and is refused every lecture
+write, the course's settings, its roster and publishing with `403
+course_read_only`. If you are working for a TA, do not try to save notes or
+slides; say that the lecture is the author's.
 
 A course that is not in your list is one you have not been granted, and there
 is no way through the API to reach it. A *new* course is the lecturer's to
@@ -395,7 +399,8 @@ are unsure about, quote the sentence, and say what you would do.
 | `address_required` (409) | the course has no published address yet, and every student URL is that address. Its author sets one; you cannot |
 | `reader_password_required` (409) | the course has no reader password, so a publish would be invisible to students. Its author sets one; you cannot |
 | `session_required` (403) | a route a held credential may not call at all — `/tokens`, `/access`, `POST /courses`, the course address, the reader password |
-| `forbidden` (403) | a `viewers` session tried to write, or the thing belongs to someone else |
+| `course_read_only` (403) | the person's role on this course does not cover this — a TA saving a lecture, changing the course or its roster, or publishing |
+| `forbidden` (403) | the thing belongs to someone else |
 | `too_large` | over the cap: 5 MB a figure, 256 KB a guide |
 
 Every error is `{ error, message, … }`. `error` is stable and worth branching

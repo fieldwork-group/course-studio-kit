@@ -83,6 +83,10 @@
             "string",
             "null"
           ]
+        },
+        "settings": {
+          "type": "string",
+          "description": "a hash of the manifest's other fields at publish, so `GET …/pending` can say they changed since"
         }
       },
       "additionalProperties": false

@@ -14,7 +14,7 @@ know (`class`, `title`, `align`) is dropped and the save goes through.
 Every count below is what the four committed lectures actually contain, which is
 what makes an unfamiliar class suspicious rather than merely unusual.
 
-Documents surveyed: `L01-free-oscillations/notes`, `L01-free-oscillations/slides`, `L02-damped-driven/notes`, `L03-coupled-oscillators/notes`, `L04-chain-of-oscillators/notes`, `L04-chain-of-oscillators/slides`.
+Documents surveyed: `L01-free-oscillations/notes`, `L01-free-oscillations/slides`, `L02-damped-driven/notes`, `L03-coupled-oscillators/notes`, `L04-chain-of-oscillators/notes`, `L04-chain-of-oscillators/slides`, `L05-string-and-wave-equation/notes`, `L05-string-and-wave-equation/slides`, `L06-travelling-waves-impedance/notes`, `L06-travelling-waves-impedance/slides`.
 
 <!-- hand-written: kept when this file is regenerated -->
 
@@ -83,8 +83,8 @@ What may go inside what. A content expression above names one of these.
 - **content** — `block+`
 - **attributes** — `id`
 - **gets a `data-id`** — yes
-- **in the lectures** — 4
-- **classes seen** — `notes-head` ×4
+- **in the lectures** — 6
+- **classes seen** — `notes-head` ×6
 
 ```html
 <header class="notes-head">
@@ -99,21 +99,13 @@ What may go inside what. A content expression above names one of these.
 - **content** — `block+`
 - **attributes** — `id`, `anchor`, `num`, `title`
 - **gets a `data-id`** — yes
-- **in the lectures** — 76
+- **in the lectures** — 115
 - **classes seen** — _none in the committed lectures_
 
 ```html
-<section id="s19">
-  <h2><span class="n">19</span><span class="t">קריאה</span></h2>
-  <ul>
-    <li>
-      <strong>Georgi</strong>, <em>The Physics of Waves</em> — ch. 3, ch. 4.
-    </li>
-    <li>
-      <strong>Berkeley Physics Course</strong> vol. 3 (Crawford), <em>Waves</em> — pp. 16, 23–24, 28–29, 32–35.
-    </li>
-  </ul>
-  <p class="note">התרגילים נמצאים בגיליון נפרד.</p>
+<section id="s20">
+  <h2><span class="n">20</span><span class="t">קריאה</span></h2>
+  <p class="note">לשבוע זה <strong>לא צוינה הפניה</strong>. בשמונת עמודי כתב היד של ההרצאה אין תיבת מקורות, בשונה משבוע 3, ולכן אין כאן רשימת קריאה. התרגילים נמצאים בגיליון נפרד.</p>
 </section>
 ```
 
@@ -123,16 +115,17 @@ What may go inside what. A content expression above names one of these.
 - **content** — `block+`
 - **attributes** — `id`, `cls`, `anchor`
 - **gets a `data-id`** — yes
-- **in the lectures** — 41
-- **classes seen** — `title` ×2
+- **in the lectures** — 73
+- **classes seen** — `title` ×4
 
 ```html
 <section>
-  <h2 class="demo-title">מסה על קפיץ, חי</h2>
-  <div id="demo-mass-spring"></div>
-  <aside class="notes">
-    1. לשחרר ממנוחה — ההיטל של החץ הוא מיקום הגוש. 2. להכפיל את המשרעת — זמן המחזור לא משתנה (לזכור לשקף 7). 3. לגרור את חץ המהירות — המשרעת גדלה, המיקום ההתחלתי לא.
-  </aside>
+  <h2>גל עומד = שני גלים נעים</h2>
+  <div class="result wide">
+    <span class="lab">זהות אחת</span>
+    $$\cos kz\cos\omega t = \tfrac12\big[\cos(kz - \omega t) + \cos(kz + \omega t)\big]$$
+  </div>
+  <p class="lead">גל שיוצא לקיר, מוחזר, ונפגש עם עצמו: בצמתים השניים תמיד מתבטלים, בכרסים תמיד מתחזקים.</p>
 </section>
 ```
 
@@ -142,11 +135,11 @@ What may go inside what. A content expression above names one of these.
 - **content** — `inline*`
 - **attributes** — `id`, `level`, `cls`, `style`
 - **gets a `data-id`** — yes
-- **in the lectures** — 62
-- **classes seen** — `demo-title` ×4, `en-sub` ×2
+- **in the lectures** — 103
+- **classes seen** — `demo-title` ×12, `en-sub` ×4
 
 ```html
-<h3 class="en-sub">free oscillations</h3>
+<h3>בתהודה בדיוק: הגבול $\delta\to0$</h3>
 ```
 
 ### `paragraph` — `<p>`
@@ -155,8 +148,8 @@ What may go inside what. A content expression above names one of these.
 - **content** — `inline*`
 - **attributes** — `id`, `cls`, `style`
 - **gets a `data-id`** — yes
-- **in the lectures** — 456
-- **classes seen** — `ans` ×15, `small muted` ×15, `demo-link no-print` ×11, `small` ×11, `lead` ×10, `lead fragment` ×9, `note` ×4, `sub` ×4, `byline` ×2, `kicker` ×2, `examples` ×1, `freq-strip` ×1, `small fragment` ×1, `small muted fragment` ×1, `stamp` ×1, `thesis` ×1
+- **in the lectures** — 615
+- **classes seen** — `ans` ×25, `small` ×19, `small muted` ×17, `lead` ×16, `lead fragment` ×15, `demo-link no-print` ×14, `note` ×8, `small fragment` ×6, `sub` ×6, `byline` ×4, `kicker` ×4, `small muted fragment` ×3, `examples` ×1, `freq-strip` ×1, `stamp` ×1, `thesis` ×1
 
 ```html
 <p>נאסוף את $N$ ההסטות לוקטור אחד, $\vec\psi = (\psi_1,\dots,\psi_N)^T$, ונכתוב את $N$ המשוואות כמשוואה אחת, בדיוק כמו בסעיף 5 של הרצאה 3.</p>
@@ -168,11 +161,11 @@ What may go inside what. A content expression above names one of these.
 - **content** — `inline*`
 - **attributes** — _none_
 - **gets a `data-id`** — no
-- **in the lectures** — 338
+- **in the lectures** — 461
 - **classes seen** — _none in the committed lectures_
 
 ```html
-<b>סרקו את $\omega$ מלמטה כלפי מעלה.</b> בתדירות נמוכה המסה נעה יחד עם הכפייה; בגבוהה היא נעה הפוך ממנה וכמעט אינה זזה.
+<b>הקטינו את הצימוד.</b> הפעימה מתארכת, ו־$\delta\omega/\Omega$ שבקריאה קטן. מספר המחזורים המהירים בתוך פעימה אחת גדל.
 ```
 
 ### `callout` — `<div>`
@@ -181,13 +174,16 @@ What may go inside what. A content expression above names one of these.
 - **content** — `block+`
 - **attributes** — `id`, `cls`, `style`
 - **gets a `data-id`** — yes
-- **in the lectures** — 289
-- **classes seen** — `result` ×109, `board-note` ×39, `deriv` ×36, `note` ×23, `result wide` ×15, `cols` ×14, `think` ×13, `try` ×10, `cols top` ×2, `summary` ×2
+- **in the lectures** — 410
+- **classes seen** — `result` ×139, `board-note` ×62, `deriv` ×39, `result wide` ×33, `cols` ×25, `note` ×25, `think` ×21, `try` ×14, `summary` ×6, `cols top` ×2, `result fragment` ×1
 
 ```html
-<div class="result wide">
-  <span class="lab">התוצאה הכללית</span>
-  $$\psi(t) = |X|\;\underbrace{e^{(\Real s)\,t}}_{\text{envelope}}\;\underbrace{\cos\!\left((\Imag s)\,t + \varphi\right)}_{\text{oscillation}}$$
+<div>
+  <div class="result">
+    <span class="lab">הכוח המדויק</span>
+    $$M\ddot\psi = -2T\sin\theta = -2k\,\psi\left(1 - \frac{a_0}{\ell}\right)$$
+  </div>
+  <p class="stamp">לא הרמוני</p>
 </div>
 ```
 
@@ -206,7 +202,7 @@ What may go inside what. A content expression above names one of these.
 - **content** — `listItem+`
 - **attributes** — `id`, `ordered`, `cls`, `style`, `start`
 - **gets a `data-id`** — yes
-- **in the lectures** — 32
+- **in the lectures** — 37
 - **classes seen** — `big-list` ×3, `conditions` ×1, `cycle` ×1, `fragment big-list` ×1
 
 ```html
@@ -226,8 +222,8 @@ What may go inside what. A content expression above names one of these.
 - **content** — `(figcaption | block)+`
 - **attributes** — `id`, `cls`, `anchor`
 - **gets a `data-id`** — yes
-- **in the lectures** — 46
-- **classes seen** — `fig` ×21, `fig-slide` ×13, `demo-block` ×10, `fig-slide narrow` ×1, `fig-slide roadmap` ×1
+- **in the lectures** — 64
+- **classes seen** — `fig` ×28, `fig-slide` ×20, `demo-block` ×14, `fig-slide narrow` ×1, `fig-slide roadmap` ×1
 
 ```html
 <figure class="fig">
@@ -242,11 +238,11 @@ What may go inside what. A content expression above names one of these.
 - **content** — _atom_
 - **attributes** — `id`, `src`, `alt`, `cls`, `width`, `height`
 - **gets a `data-id`** — yes
-- **in the lectures** — 36
+- **in the lectures** — 50
 - **classes seen** — _none in the committed lectures_
 
 ```html
-<img src="figures/guess-modes.svg" alt="צורות האופנים המנוחשות עבור N=1, 2, 3">
+<img src="figures/reflection.svg" alt="שיקוף המטוטלות המצומדות סביב נקודת האמצע">
 ```
 
 ### `demoMount` — `<div>`
@@ -255,11 +251,11 @@ What may go inside what. A content expression above names one of these.
 - **content** — _atom_
 - **attributes** — `id`, `mountId`, `cls`
 - **gets a `data-id`** — yes
-- **in the lectures** — 14
+- **in the lectures** — 22
 - **classes seen** — _none in the committed lectures_
 
 ```html
-<div id="demo-chain-pluck"></div>
+<div id="demo-mass-spring"></div>
 ```
 
 ### `details` — `<details>`
@@ -268,7 +264,7 @@ What may go inside what. A content expression above names one of these.
 - **content** — `(summary | block)+`
 - **attributes** — `id`, `cls`, `open`
 - **gets a `data-id`** — yes
-- **in the lectures** — 13
+- **in the lectures** — 22
 - **classes seen** — _none in the committed lectures_
 
 ```html
@@ -284,30 +280,18 @@ What may go inside what. A content expression above names one of these.
 - **content** — `tableRow+`
 - **attributes** — `id`, `cls`, `style`
 - **gets a `data-id`** — yes
-- **in the lectures** — 16
-- **classes seen** — `dict` ×2, `defs` ×1, `dict three` ×1
+- **in the lectures** — 24
+- **classes seen** — `dict` ×7, `defs` ×1, `dict three` ×1
 
 ```html
-<table class="dict">
+<table style="margin:.2em 0 0">
   <tr>
-    <th>מסה על קפיץ</th>
-    <th>מעגל LC</th>
-    <th>התפקיד</th>
+    <td>כל האנרגיה עברה למסה 2</td>
+    <td class="ltr">$t^{*} = \dfrac{\pi}{2\,\delta\omega}$</td>
   </tr>
   <tr>
-    <td>$m$</td>
-    <td>$L$</td>
-    <td>אינרציה</td>
-  </tr>
-  <tr>
-    <td>$k$</td>
-    <td>$1/C$</td>
-    <td>כוח מחזיר</td>
-  </tr>
-  <tr>
-    <td>$x$</td>
-    <td>$Q$</td>
-    <td>דרגת החופש</td>
+    <td>הלוך ושוב שלם, ומכאן מחזור ההחלפה</td>
+    <td class="ltr">$t_{beat} = \dfrac{2\pi}{2\,\delta\omega} = \dfrac{\pi}{\delta\omega}$</td>
   </tr>
 </table>
 ```
@@ -318,8 +302,8 @@ What may go inside what. A content expression above names one of these.
 - **content** — `block+`
 - **attributes** — `id`, `cls`
 - **gets a `data-id`** — yes
-- **in the lectures** — 21
-- **classes seen** — `notes` ×21
+- **in the lectures** — 32
+- **classes seen** — `notes` ×32
 
 ```html
 <aside class="notes">
@@ -342,11 +326,12 @@ What may go inside what. A content expression above names one of these.
 - **content** — _atom_
 - **attributes** — `latex`, `delim`
 - **gets a `data-id`** — no
-- **in the lectures** — 89
+- **in the lectures** — 116
 - **classes seen** — _none in the committed lectures_
 
 ```html
-$$\alpha\,\frac{\dd^2\psi}{\dd t^2} + \beta\,\frac{\dd\psi}{\dd t} + \gamma\,\psi = 0$$
+$$2\omega_0^2 - \omega_0^2\frac{V_{n-1}}{V_n} - \omega_0^2\frac{V_{n+1}}{V_n}
+      = \omega^2$$
 ```
 
 ### `raw` — no element of its own
@@ -369,7 +354,7 @@ the whole of it — everything else inline is a **mark**, below.
 - **content** — _atom_
 - **attributes** — _none_
 - **gets a `data-id`** — no
-- **in the lectures** — 3015
+- **in the lectures** — 4043
 - **classes seen** — _none in the committed lectures_
 
 ```html
@@ -382,7 +367,7 @@ the whole of it — everything else inline is a **mark**, below.
 - **content** — _atom_
 - **attributes** — `latex`, `delim`
 - **gets a `data-id`** — no
-- **in the lectures** — 1589
+- **in the lectures** — 2163
 - **classes seen** — _none in the committed lectures_
 
 ```html
@@ -425,12 +410,12 @@ addressed through their parent. `figcaption` does, because the editor can highli
 - **content** — `block+`
 - **attributes** — `cls`, `style`
 - **gets a `data-id`** — no
-- **in the lectures** — 118
-- **classes seen** — `fragment` ×4, `hl` ×1
+- **in the lectures** — 138
+- **classes seen** — `fragment` ×7, `hl` ×1
 
 ```html
 <li>
-  כאשר $V''(x_0) = 0$: האיבר המוביל הוא $\psi^3$ או $\psi^4$, והתנועה אינה הרמונית גם במשרעות קטנות מאוד.
+  <b>לחצו על "אופן 1".</b> עמודה אחת בלבד, וכל חרוז מבצע תנודה הרמונית פשוטה. זו הבקרה: אופן טהור נשאר טהור.
 </li>
 ```
 
@@ -440,11 +425,11 @@ addressed through their parent. `figcaption` does, because the editor can highli
 - **content** — `inline*`
 - **attributes** — `id`, `cls`
 - **gets a `data-id`** — yes
-- **in the lectures** — 46
+- **in the lectures** — 56
 - **classes seen** — _none in the committed lectures_
 
 ```html
-<figcaption>האופן הסימטרי מוחזר על ידי $S$ עם סימן הפוך, והאנטי־סימטרי מוחזר לעצמו. כדי למצוא את שני האופנים די לשאול אם תמונת המראה זהה או הפוכה.</figcaption>
+<figcaption>מתנד יחיד, שניים מצומדים, שרשרת של $N$, והגבול הרציף. הגל מופיע רק מהשלב השני: הצימוד הוא שמאפשר להפרעה במקום אחד להניע את שכנתה.</figcaption>
 ```
 
 ### `summary` — `<summary>`
@@ -453,11 +438,11 @@ addressed through their parent. `figcaption` does, because the editor can highli
 - **content** — `inline*`
 - **attributes** — `cls`
 - **gets a `data-id`** — no
-- **in the lectures** — 13
+- **in the lectures** — 22
 - **classes seen** — _none in the committed lectures_
 
 ```html
-<summary>ההוכחה, בשתי שורות</summary>
+<summary>מדוע האופנים אורתוגונליים — שתי שורות</summary>
 ```
 
 ### `tableRow` — `<tr>`
@@ -466,14 +451,14 @@ addressed through their parent. `figcaption` does, because the editor can highli
 - **content** — `(tableCell | tableHeader)+`
 - **attributes** — `cls`, `style`
 - **gets a `data-id`** — no
-- **in the lectures** — 84
+- **in the lectures** — 133
 - **classes seen** — _none in the committed lectures_
 
 ```html
 <tr>
-  <td>וקטור האופן</td>
-  <td class="ltr">$\vec V^{(\ell)}$</td>
-  <td>רכיביו $V^{(\ell)}_n$, לא מנורמלים</td>
+  <td class="ltr">$A$</td>
+  <td>משרעת <span class="en">(amplitude)</span></td>
+  <td class="ltr">—</td>
 </tr>
 ```
 
@@ -483,11 +468,11 @@ addressed through their parent. `figcaption` does, because the editor can highli
 - **content** — `inline*`
 - **attributes** — `cls`, `style`, `colspan`, `rowspan`
 - **gets a `data-id`** — no
-- **in the lectures** — 204
-- **classes seen** — `ltr` ×89
+- **in the lectures** — 328
+- **classes seen** — `ltr` ×139
 
 ```html
-<td class="ltr">$X = a - ib = Ae^{i\varphi}$</td>
+<td>מופע <span class="en">(phase)</span></td>
 ```
 
 ### `tableHeader` — `<th>`
@@ -496,8 +481,8 @@ addressed through their parent. `figcaption` does, because the editor can highli
 - **content** — `inline*`
 - **attributes** — `cls`, `style`, `colspan`, `rowspan`
 - **gets a `data-id`** — no
-- **in the lectures** — 40
-- **classes seen** — `ltr` ×15
+- **in the lectures** — 64
+- **classes seen** — `ltr` ×19
 
 ```html
 <th class="ltr">$\lambda_\ell$</th>
@@ -513,18 +498,18 @@ factor)</span></span>` is real markup in both lectures.
 ### `link` — `<a>`
 
 - **attributes** — `href`, `cls`, `title`, `target`, `rel`, `demo`, `rep`, `show`
-- **in the lectures** — 11
+- **in the lectures** — 14
 - **classes seen** — _none in the committed lectures_
 
 ```html
-<a href="#demo-block-2" data-demo="#demo-coupled-pendula">חזרה להדגמה 2, ושבירת התנאי ← </a>
+<a href="#demo-block-1" data-demo="#demo-chain-modes">חזרה להדגמה 1, לעקומה ולנקודות ← </a>
 ```
 
 ### `span` — `<span>`
 
 - **attributes** — `cls`, `style`, `dir`
-- **in the lectures** — 451
-- **classes seen** — `lab` ×161, `en` ×84, `hint` ×83, `cap` ×64, `muted` ×14, `think-tag` ×4, `tag` ×1
+- **in the lectures** — 575
+- **classes seen** — `lab` ×222, `hint` ×108, `en` ×104, `cap` ×64, `muted` ×14, `think-tag` ×4, `tag` ×1
 
 ```html
 <span class="lab">משוואות התנועה</span>
@@ -533,27 +518,27 @@ factor)</span></span>` is real markup in both lectures.
 ### `strong` — `<strong>`
 
 - **attributes** — _none_
-- **in the lectures** — 144
+- **in the lectures** — 196
 - **classes seen** — _none in the committed lectures_
 
 ```html
-<strong>העקומה אינה משתנה כלל</strong>
+<strong>עולה עם מספר הצמתים</strong>
 ```
 
 ### `b` — `<b>`
 
 - **attributes** — _none_
-- **in the lectures** — 138
+- **in the lectures** — 174
 - **classes seen** — _none in the committed lectures_
 
 ```html
-<b>לחצו על "10 Hz" והפעילו את הצליל.</b>
+<b>הפעילו את "קואורדינטות נורמליות".</b>
 ```
 
 ### `em` — `<em>`
 
 - **attributes** — _none_
-- **in the lectures** — 33
+- **in the lectures** — 34
 - **classes seen** — _none in the committed lectures_
 
 ```html
@@ -569,11 +554,11 @@ factor)</span></span>` is real markup in both lectures.
 ### `code` — `<code>`
 
 - **attributes** — _none_
-- **in the lectures** — 5
+- **in the lectures** — 7
 - **classes seen** — _none in the committed lectures_
 
 ```html
-<code>lambda/a</code>
+<code>conventions.md</code>
 ```
 
 ### `sup` — `<sup>`

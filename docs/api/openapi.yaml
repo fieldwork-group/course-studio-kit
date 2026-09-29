@@ -33,9 +33,13 @@ info:
 
     - **The tenant is never in the path.** It is fixed in the deployment, so
       the IAM policy `tenants/<t>/*` means something.
-    - **Every write needs the `authors` group.** A `viewers` session may read
-      everything, including drafts, and is refused every non-GET by method.
-      There are no per-route exceptions.
+    - **What a caller may do on a course is its role there** (ADR-0015):
+      an `author` everything; a `ta` reads the course, drafts included, and
+      writes the exercises and the grading and nothing else (`403
+      course_read_only`); a `student` only their own workspace under
+      `/courses/{c}/me/`. Every course route is in one table
+      (`ROUTE_FAMILIES`, `api/src/access.js`); there are no per-route
+      exceptions.
     - **A document save is conditional.** `PUT …/notes` and `PUT …/slides`
       require `If-Match` with the ETag from the `GET` (or `If-None-Match: *`
       to create), and answer `412` with the current ETag and who wrote it.
@@ -110,8 +114,10 @@ paths:
       operationId: getMe
       summary: The signed-in actor, their groups and the tenant.
       description: |
-        The first call of any client. `groups` decides what the rest of the
-        API will allow: `authors` writes, `viewers` reads.
+        The first call of any client. `groups` is the ceiling — `authors`
+        may open courses and write, `assistants` (a TA) writes only on a
+        course they hold `ta` on, `students` reach their own workspace — and
+        `courses` is the role on each course.
       responses:
         '200':
           description: The session.
@@ -124,7 +130,7 @@ paths:
                   actor: { type: string, description: 'the email claim' }
                   groups:
                     type: array
-                    items: { type: string, enum: [authors, viewers] }
+                    items: { type: string, enum: [authors, assistants, admins, students] }
                   tenant: { type: string }
                   opened:
                     type: array
@@ -362,7 +368,7 @@ paths:
                     description: |
                       Whether this course has a reader password, and nothing
                       more — the password itself is `GET …/reader-password`,
-                      which a `viewer` is refused.
+                      which a `ta` is refused.
                     properties:
                       set: { type: [string, 'null'], format: date-time }
                   guides:
@@ -391,6 +397,15 @@ paths:
         gives it: a held credential must not open courses. A non-administrator
         gets `403 admin_required`; they open their own with `POST /courses`.
         The create writes `dir` and logs `course.create`.
+
+        **`If-Match` is honoured when sent** (2026-09-28): the body is the
+        whole document — the lecture order, the weeks, the theme — so a
+        client editing a few fields of a copy it read earlier sends the ETag
+        of that read, and a stale one is a `412` carrying who wrote last
+        rather than an overwrite of what they added. Without the header the
+        write is unconditional, as `studio push` has always sent it.
+      parameters:
+        - $ref: '#/components/parameters/ifMatchOptional'
       requestBody:
         required: true
         content:
@@ -409,6 +424,7 @@ paths:
                   versionId: { type: string }
         '400': { $ref: '#/components/responses/invalidDocument' }
         '403': { $ref: '#/components/responses/forbidden' }
+        '412': { $ref: '#/components/responses/precondition' }
     delete:
       tags: [courses]
       operationId: deleteCourse
@@ -711,7 +727,7 @@ paths:
         lecturer at the podium being asked "what was the password" is the real
         case. A class credential is a secret from the log, not from its owner —
         it appears in no event, no log line and no URL. **An author of the
-        course only**: an administrator too, a `viewer` gets `403
+        course only**: an administrator too, a `ta` gets `403
         course_read_only`, and a token or a connector gets `403
         session_required`.
       responses:
@@ -1160,6 +1176,53 @@ paths:
                       slides:
                         type: array
                         items: { $ref: '#/components/schemas/LooseVersion' }
+
+  /courses/{c}/lectures/{l}/pending:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+    get:
+      tags: [lectures]
+      operationId: pendingChanges
+      summary: What a publish would change — the notes' blocks that differ from the published version.
+      description: |
+        The block-level difference between the draft `notes.html` and the
+        notes version the last publish stamped (`published.version`): each
+        block that is `edited`, `added`, `removed` or `moved`, counted once. A
+        change inside a box counts once, on the box; ten saves of one
+        paragraph are one change; a draft undone back to what was published
+        has `count: 0`. Two reads and two parses — no event log.
+
+        Only the notes are counted. `settingsChanged` says the manifest (title,
+        kicker, week, demo wiring) differs from what was published, with no
+        number; the deck is not compared.
+
+        Never published: `published: null`, `count: null`. Published but the
+        stamped version can no longer be read: `count: null` with `reason:
+        published_version_gone` — no number rather than a wrong one.
+        `changes` holds at most 50; `more` is the rest.
+      responses:
+        '200':
+          description: What is waiting.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [published, count, changes, settingsChanged]
+                properties:
+                  published:
+                    type: [object, 'null']
+                    properties:
+                      at: { type: string, format: date-time }
+                      version: { type: [string, 'null'] }
+                  count: { type: [integer, 'null'] }
+                  changes:
+                    type: array
+                    items: { $ref: '#/components/schemas/PendingChange' }
+                  more: { type: integer, description: 'changes counted and not listed' }
+                  settingsChanged: { type: boolean }
+                  reason: { type: string, enum: [published_version_gone] }
+        '404': { $ref: '#/components/responses/notFound' }
 
   /courses/{c}/lectures/{l}/restore:
     parameters:
@@ -1773,7 +1836,7 @@ paths:
               properties:
                 roles:
                   type: object
-                  additionalProperties: { type: string, enum: [author, viewer] }
+                  additionalProperties: { type: string, enum: [author, ta, student] }
                 courseLimit:
                   type: [integer, 'null']
                   minimum: 0
@@ -2045,16 +2108,14 @@ paths:
     get:
       tags: [exercises]
       operationId: getExerciseKey
-      summary: The worked answers and the rubric. An author of the course, never a viewer.
+      summary: The worked answers and the rubric. An author or a TA of the course.
       description: |
         A second fragment of the same shape, whose sections line up with the
         questions **by order**.
 
-        **`403 course_read_only` for a `viewer`.** The course gate hands a
-        viewer every other GET on the course; this is the marking scheme, and
-        a `viewers` grant is what a teaching assistant or a colleague gets. It
-        is never published, never served under `/courses/{c}/me/…`, and
-        `cache-control: no-store`.
+        **The people who mark: an author and a TA** (ADR-0015). It is the
+        marking scheme, so it is never published, never served under
+        `/courses/{c}/me/…`, and `cache-control: no-store`.
       responses:
         '200':
           description: The fragment.
@@ -2137,9 +2198,9 @@ paths:
         gradebook and the CSV — everything that walks this list means the
         class.
 
-        **An author of the course.** A `viewer` gets `403 course_read_only`: a
-        class's handwriting, their marks and the roster's addresses beside them
-        are not a thing a reader of the drafts is handed.
+        **An author or a TA of the course** (ADR-0015) — the people who mark.
+        A class's handwriting, their marks and the roster's addresses beside
+        them are nobody else's.
       responses:
         '200':
           description: The list.
@@ -2444,8 +2505,8 @@ paths:
       operationId: listMembers
       summary: Who has which role on this course. Authors and administrators.
       description: |
-        The one read a `viewer` is refused (403): a lecturer may see who reads
-        their drafts; a student may not enumerate the course.
+        An author's (`403 course_read_only` for a `ta`): a lecturer may see
+        who reads their drafts; nobody else enumerates the course.
       responses:
         '200':
           description: The members.
@@ -2460,7 +2521,7 @@ paths:
                       type: object
                       properties:
                         email: { type: string }
-                        role: { type: string, enum: [author, viewer] }
+                        role: { type: string, enum: [author, ta] }
         '403': { $ref: '#/components/responses/forbidden' }
 
   /courses/{c}/roster:
@@ -2469,12 +2530,13 @@ paths:
     get:
       tags: [courses]
       operationId: getRoster
-      summary: The course's students, with each one's sid. An author of the course.
+      summary: The course's students, with each one's sid, and its TAs. An author of the course.
       description: |
         The list a lecturer uploaded: one line per student, with the `sid` their
-        work is filed under. **An author of the course** (an administrator too);
-        a `viewer` gets `403 course_read_only`, because a reader of the drafts
-        is not somebody to hand two hundred email addresses to.
+        work is filed under, and the course's TAs beside it (`tas`). **An
+        author of the course** (an administrator too); a `ta` gets `403
+        course_read_only` — a TA marks the class and does not decide who is
+        in it.
 
         The access record beside each line is the gate; this is the course's own
         copy, and it is what the grading list and the gradebook read.
@@ -2488,7 +2550,7 @@ paths:
     put:
       tags: [courses]
       operationId: putRoster
-      summary: Add addresses to the roster. Idempotent, and reports per address.
+      summary: Add addresses to the roster, as students or as TAs. Idempotent, and reports per address.
       description: |
         Each address becomes a user in the Cognito pool in the `students`
         group, a `student` role on this course, and a line here — in that
@@ -2496,20 +2558,27 @@ paths:
         nothing. A student signs in with their address and a one-time code;
         there is no password and no invitation email.
 
+        **`role: 'ta'`** (ADR-0015) adds every address in the call as a TA
+        instead: the `assistants` group, a `ta` role, and a line in `tas`.
+        A TA gets no `sid` — nothing is filed under one. An author is not
+        added here; an administrator grants that (`PUT /access/{email}`).
+
         **Idempotent, and one bad line does not cost the others.** A lecturer
         pastes a column out of a spreadsheet and half of it is last week's
         paste, so the answer is `{ added, present, refused }` rather than a
         400 on the first typo. `refused` carries a `reason` each:
 
         - `invalid_email` — not an address;
-        - `has_role` — that address is already an `author` or a `viewer` of
-          this course, and the roles map holds one role per course, so adding
+        - `has_role` — that address already holds another role on this
+          course (`author`, or the other of `student` and `ta`), and the roles
+          map holds one role per course, so adding
           it would quietly revoke what they have. A lecturer who wants to see
           the student workspace adds a second address;
         - `identity_failed` — the pool refused; the log has the reason.
 
         At most 500 addresses per call (`400 too_many`). Event `roster.add`,
-        one per address actually added, carrying the address and the `sid`.
+        one per address actually added, carrying the address and the `sid`
+        (or `ta`).
       requestBody:
         required: true
         content:
@@ -2522,6 +2591,11 @@ paths:
                   type: array
                   maxItems: 500
                   items: { type: string }
+                role:
+                  type: string
+                  enum: [student, ta]
+                  default: student
+                  description: what everyone in this call is added as
       responses:
         '200':
           description: What happened to each address.
@@ -2529,9 +2603,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [course, added, present, refused]
+                required: [course, role, added, present, refused]
                 properties:
                   course: { type: string }
+                  role: { type: string, enum: [student, ta] }
                   added: { type: integer, description: how many were new }
                   present: { type: integer, description: how many were already on the roster }
                   refused:
@@ -2590,12 +2665,14 @@ paths:
     delete:
       tags: [courses]
       operationId: removeFromRoster
-      summary: Take one student off this course's roster.
+      summary: Take one student or TA off this course's roster.
       description: |
-        Removes the `student` grant and the roster line. The **`sid` stays** on
-        the access record — a term's submissions are filed under it — and the
-        Cognito user is never deleted; they leave the `students` group only
-        once they are on no roster in the tenant at all. Event `roster.remove`.
+        Removes the `student` or `ta` grant and the roster line. The **`sid`
+        stays** on the access record — a term's submissions are filed under
+        it — and the Cognito user is never deleted; they leave the `students`
+        group (or `assistants`) only once they hold that role on no course in
+        the tenant at all. An `author` is not on the roster: 404. Event
+        `roster.remove`.
       responses:
         '204': { description: Removed. }
         '403': { $ref: '#/components/responses/forbidden' }
@@ -3395,8 +3472,9 @@ components:
           carries the token's id and label, never the secret.
 
         On the local dev server there is no token at all: the header
-        `x-dev-user: you@example.com` is the actor, and `x-dev-groups: viewers`
-        makes it a read-only session. The server binds to localhost.
+        `x-dev-user: you@example.com` is the actor, and `x-dev-groups:
+        assistants` with a `ta` grant makes it a TA's session. The server binds
+        to localhost.
 
   parameters:
     slug:
@@ -3506,8 +3584,10 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     forbidden:
       description: |
-        A `viewers` session tried to write, or an actor tried something that is
-        someone else's (a lock, another author's note, another author's brief).
+        The caller's role on the course does not cover this (`course_read_only`
+        — a TA writing a lecture, the roster or the settings), or an actor
+        tried something that is someone else's (a lock, another author's note,
+        another author's brief).
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -3596,6 +3676,18 @@ components:
                   writes is filed under it; **no key under `students/` carries
                   an email**. One person, one sid, across every course of the
                   tenant.
+              added: { type: [string, 'null'], format: date-time }
+              by: { type: [string, 'null'], description: who added them }
+        tas:
+          type: array
+          description: |
+            The course's TAs (ADR-0015): they read the course, edit its
+            exercises and mark. No `sid`; nothing is filed under a TA.
+          items:
+            type: object
+            required: [email]
+            properties:
+              email: { type: string }
               added: { type: [string, 'null'], format: date-time }
               by: { type: [string, 'null'], description: who added them }
         test:
@@ -3912,7 +4004,7 @@ components:
         email: { type: string }
         roles:
           type: object
-          additionalProperties: { type: string, enum: [author, viewer] }
+          additionalProperties: { type: string, enum: [author, ta, student] }
         opened:
           type: array
           items: { type: string }
@@ -4096,6 +4188,30 @@ components:
         at: { type: string, format: date-time }
         version: { type: [string, 'null'] }
         platform: { type: [string, 'null'] }
+        settings:
+          type: string
+          description: |
+            A hash of the manifest's other fields at the moment of the
+            publish, which `GET …/pending` compares with the manifest now to
+            say the settings changed too. Absent on a publish from before
+            2026-09-27.
+
+    PendingChange:
+      type: object
+      description: |
+        One block a publish would change, described the way a history row
+        is: its kind key, its section and the start of its text.
+      properties:
+        change: { type: string, enum: [edited, added, removed, moved] }
+        id: { type: string, description: 'the block id; the studio never shows it' }
+        kind: { type: string, description: '`paragraph`, `result`, `demo`, `section`, …' }
+        section:
+          type: [object, 'null']
+          description: 'the enclosing section; null for the masthead'
+          properties:
+            n: { type: [integer, string, 'null'] }
+            title: { type: [string, 'null'] }
+        text: { type: string, description: 'a snippet; each formula is one U+FFFC' }
 
     LectureSummary:
       type: object
