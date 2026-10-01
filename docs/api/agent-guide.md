@@ -247,30 +247,29 @@ GET  /courses/{c}/lectures/{l}/publish/{job}         poll: copying → rendering
 The pages are already live when the `202` arrives; what is still running is the
 PDF. A failed print is a failed job, not a failed publish.
 
-**A course with no address, or no reader password, cannot be published**: `409
-address_required` and then `409 reader_password_required`, before anything is
-copied.
+**A course with no address cannot be published**: `409 address_required`,
+before anything is copied.
 
 The **address** is the course's published prefix — the first segment of every
-student URL (`/<address>/<lecture>/notes`), the key the edge looks the course
-up by, and the user name students type. It is not the course id: since
+student URL (`/<address>/<lecture>/notes`), and the name the site knows the
+course by. It is not the course id: since
 2026-09-17 the id is generated, is the store's key, appears in the studio's own
 URL and in your requests, and is seen by no student. The address is chosen
 once, before the first publish, and is fixed afterwards. `GET /courses/{c}`
 carries it as `course.address`, with `course.publishedFirst` saying whether it
 is fixed yet.
 
-The **reader password** goes with it: the edge admits a course only when its
-credential is on it, so publishing without one would put a lecture on the site
-that every student gets a 404 for.
-
-Both are one action by the course's author, from a signed-in session: the
+It is one action by the course's author, from a signed-in session: the
 Publishing panel on the course page in the studio, or `studio address set <c>
-<address>` and `studio reader set <c>` at a shell. **Neither is yours to set** —
-there is a route for the address but it refuses a token or a connector with
-`403 session_required`, because a held credential must not be able to move or
-open the door students walk through. If you meet either 409, say so and ask; do
-not retry.
+<address>` at a shell. **It is not yours to set** — the route refuses a token
+or a connector with `403 session_required`, because a held credential must not
+be able to move the door students walk through. If you meet the 409, say so and
+ask; do not retry.
+
+**Reading what is published needs a sign-in**: students, TAs and authors of the
+course open it after signing in to the studio, and there is no class password to
+hand out (since 2026-09-30). If someone asks how students get in, that is the
+answer — the course's roster, not a password.
 
 ## Block ids
 
@@ -397,8 +396,7 @@ are unsure about, quote the sentence, and say what you would do.
 | `invalid_manifest` (400) | the manifest failed its schema; `path` is the JSON Pointer of the offending key |
 | `locked` (409) | someone has the lecture open. A courtesy, not a mutex — `If-Match` is what actually protects the save |
 | `address_required` (409) | the course has no published address yet, and every student URL is that address. Its author sets one; you cannot |
-| `reader_password_required` (409) | the course has no reader password, so a publish would be invisible to students. Its author sets one; you cannot |
-| `session_required` (403) | a route a held credential may not call at all — `/tokens`, `/access`, `POST /courses`, the course address, the reader password |
+| `session_required` (403) | a route a held credential may not call at all — `/tokens`, `/access`, `POST /courses`, the course address, the reading cookie |
 | `course_read_only` (403) | the person's role on this course does not cover this — a TA saving a lecture, changing the course or its roster, or publishing |
 | `forbidden` (403) | the thing belongs to someone else |
 | `too_large` | over the cap: 5 MB a figure, 256 KB a guide |

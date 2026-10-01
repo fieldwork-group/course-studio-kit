@@ -374,8 +374,8 @@ course's own index so the demo shows under its week:
 folder named `demos` is served with the demo CSP, which allows no network and
 no origin at all — right for the file, impossible for a page that has to load
 the platform's own bundle to mount it. The page reaches the file with
-`../../demos/<slug>/demo.html`, same origin, so the class password the reader
-already typed is what opens both.
+`../../demos/<slug>/demo.html`, same origin and under the same course path, so
+the reading cookie the reader's browser already holds is what opens both.
 
 There is no publish tool in the MCP: publishing is the author's click.
 

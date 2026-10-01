@@ -19,7 +19,7 @@
         "null"
       ],
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$",
-      "description": "the published prefix — the URL students read, the edge key and the reader user name; null until an author sets it, and fixed after the first publish"
+      "description": "the published prefix — the URL students read, and the name the edge and the reading cookie know the course by; null until an author sets it, and fixed after the first publish"
     },
     "publishedFirst": {
       "type": [

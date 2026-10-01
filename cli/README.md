@@ -63,14 +63,14 @@ any folder inside it — so nothing else has to hold it. An exported
 | `login [--api <origin>]` | sign in with a browser instead of a token, cached in `~/.config/studio/` | 1 refused or timed out |
 | `tokens create \| list \| revoke` | mint and revoke access tokens — **a signed-in session, not a token** | |
 | `address set <course> <address>` | the course's published address, once, before the first publish — **a signed-in session** | 1 broke a rule · 2 taken, or already published |
-| `reader set \| show <course>` | the password students type to open the published notes — **a signed-in session** | |
 | `roster list \| add \| remove <course>` | the course's students — who may sign in to a workspace and hand in a sheet; each is listed with the id their work is filed under | 1 not on that roster |
 | `access list \| grant \| revoke \| limit` | who may see which course — **administrators, and a session** | |
 
-`tokens`, `address`, `reader` and `access` refuse an access token with
+`tokens`, `address` and `access` refuse an access token with
 `session_required`, and say so in words. That is deliberate: a held credential
 must not be able to mint its successor, widen its owner's reach, or change the
-door students walk through.
+door students walk through. There is no `reader` command since 2026-09-30:
+students sign in to read, and there is no class password to set.
 
 `--api <origin>` names the studio; after `init` it comes from
 `.studio/config.json` and you do not pass it again.

@@ -279,7 +279,7 @@ paths:
         invalid_course`: copying the Hebrew tour into a course declared
         English is two lectures of Hebrew prose on a left-to-right page. A
         course opened this way is an ordinary course: it counts against the
-        ceiling, it has no reader password yet, and the author may delete every
+        ceiling, it has no address yet, and the author may delete every
         lecture in it.
       requestBody:
         required: true
@@ -363,14 +363,6 @@ paths:
                   lectures:
                     type: array
                     items: { $ref: '#/components/schemas/LectureSummary' }
-                  reader:
-                    type: object
-                    description: |
-                      Whether this course has a reader password, and nothing
-                      more — the password itself is `GET …/reader-password`,
-                      which a `ta` is refused.
-                    properties:
-                      set: { type: [string, 'null'], format: date-time }
                   guides:
                     type: array
                     items: { $ref: '#/components/schemas/GuideEntry' }
@@ -658,8 +650,8 @@ paths:
       operationId: putCourseAddress
       summary: Set the course's published address, once, before the first publish.
       description: |
-        The address is the first segment of every published URL, the key the
-        edge looks a course up by, and the reader user name. It was the course
+        The address is the first segment of every published URL, and the name
+        the edge and the reading cookie know a course by. It was the course
         id until 2026-09-17; the id is generated now and means nothing to a
         student, so the address is a field of its own, chosen in the publishing
         panel at the moment it matters — before the first publish.
@@ -677,8 +669,8 @@ paths:
         already has is a `200` that writes nothing.
 
         An author of the course, **from a session**: a token or a connector
-        gets `403 session_required`, the rule the reader password has, for the
-        same reason. Event `course.address`.
+        gets `403 session_required`: a held credential may not move the door
+        students walk through. Event `course.address`.
       requestBody:
         required: true
         content:
@@ -711,116 +703,63 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
-  /courses/{c}/reader-password:
+  /reading/{a}:
     parameters:
-      - $ref: '#/components/parameters/course'
-    get:
-      tags: [courses]
-      operationId: getReaderPassword
-      summary: The course's reader password, in clear, for an author of the course.
-      description: |
-        The one credential a student types to open this course's published
-        notes. The user name is **the course's address**, fixed, so a class is
-        told two things and neither has to be explained twice.
-
-        It is stored in clear on purpose: the edge holds only a digest, and the
-        lecturer at the podium being asked "what was the password" is the real
-        case. A class credential is a secret from the log, not from its owner —
-        it appears in no event, no log line and no URL. **An author of the
-        course only**: an administrator too, a `ta` gets `403
-        course_read_only`, and a token or a connector gets `403
-        session_required`.
-      responses:
-        '200':
-          description: The record.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ReaderPassword' }
-        '403': { $ref: '#/components/responses/forbidden' }
-        '404':
-          description: No reader password is set for this course.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-    put:
-      tags: [courses]
-      operationId: putReaderPassword
-      summary: Set the course's reader password. Its author, from a session.
-      description: |
-        Writes the digest the edge compares against and the record above, in
-        that order — a record that says a password is set while the edge still
-        refuses everybody would be a lie the studio then repeats. The write
-        lands at the edge in seconds and nothing is deployed.
-
-        **8 to 64 characters, printable ASCII, no colon.** Printable ASCII
-        because HTTP Basic Auth has no encoding browsers agree on for anything
-        else; no colon because Basic Auth joins the user name and the password
-        with one. Anything else is `400 invalid_password` saying which rule.
-
-        **The course needs an address first** — `409 address_required`, because
-        the digest is keyed by it and a password set against nothing would be a
-        password for no door. `PUT /courses/{c}/address` is the step before
-        this one, and the publishing panel asks in that order.
-
-        **A session only.** A token or a connector gets `403 session_required`:
-        a held credential must not be able to change the door students walk
-        through. Event `reader.set`, carrying not one character of it.
-      requestBody:
+      - name: a
+        in: path
         required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [password]
-              properties:
-                password: { type: string, minLength: 8, maxLength: 64 }
+        description: the course's published **address** — the first segment of its published URLs
+        schema: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' }
+    post:
+      tags: [courses]
+      operationId: postReading
+      summary: The reading cookie for one course, set on the response. Any role on the course, from a session.
+      description: |
+        Reading a course's published pages needs a sign-in (ADR-0015): the
+        edge serves `courses.fieldwork-group.com/<address>/…` to a browser
+        holding a valid `cs_read_<address>` cookie and sends anybody else to
+        `/studio/s/<address>?next=<path>` to sign in. This route is where the
+        cookie comes from — for **any** role on the course: an administrator,
+        an author, a TA or a student.
+
+        The course is named by its **address**, not its id, because that is
+        all the edge knows and so all the sign-in door it redirects to knows.
+
+        The cookie is `cs_read_<address>=<address>.<expiry>.<mac>`, an HMAC
+        under a key the edge reads from its KeyValueStore; `Domain=` the
+        parent of the studio's and the notes' hosts, `Path=/<address>`,
+        `Secure`, `HttpOnly`, `SameSite=Lax`, twelve hours. It carries no
+        personal data. The studio calls this when a course page opens and
+        every few hours while it stays open; the body says when it expires and
+        nothing else.
+
+        **A session only**: a token or a connector gets `403
+        session_required`. No role on the course is `403 not_on_course`, and
+        no cookie. No event: nothing changes.
       responses:
         '200':
-          description: Set.
+          description: Set. The cookie is in `Set-Cookie`.
+          headers:
+            Set-Cookie:
+              description: '`cs_read_<address>=…; Domain=…; Path=/<address>; Max-Age=43200; Secure; HttpOnly; SameSite=Lax`'
+              schema: { type: string }
           content:
             application/json:
               schema:
                 type: object
+                required: [address, expires]
                 properties:
-                  user: { type: string, description: the course's address }
-                  set: { type: string, format: date-time }
+                  address: { type: string }
+                  expires: { type: string, format: date-time }
         '400': { $ref: '#/components/responses/badRequest' }
         '403': { $ref: '#/components/responses/forbidden' }
-        '404': { $ref: '#/components/responses/notFound' }
-        '409':
-          description: '`address_required` — the course has no address yet.'
+        '404':
+          description: No course is published at that address.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
-        '502':
-          description: |
-            The edge's credential store refused the write, so nothing was
-            written here either — `reader_store_unavailable`.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-    delete:
-      tags: [courses]
-      operationId: deleteReaderPassword
-      summary: Clear it. The published course is a 404 at the edge again.
-      description: |
-        Removes the digest and then the record. Publishing is refused with
-        `409 reader_password_required` until a new one is set. Event
-        `reader.clear`.
-      responses:
-        '200':
-          description: Cleared.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  user: { type: string }
-                  set: { type: ['null'] }
-        '403': { $ref: '#/components/responses/forbidden' }
-        '404': { $ref: '#/components/responses/notFound' }
-        '502':
-          description: The edge's credential store refused the delete; nothing was removed.
+        '503':
+          description: '`reading_unavailable` — the key could not be read; no cookie was set.'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -1442,21 +1381,19 @@ paths:
         running is the PDF, and **a failed print is a failed job, not a failed
         publish**: the pages are live either way and the job record says so.
 
-        **Two refusals before a single key is copied, in this order.** `409
-        address_required` — the course has no published address yet, and every
-        site key, the edge's lookup and the reader user name are that address.
-        Then `409 reader_password_required` — the edge admits a course prefix
-        only when its credential is in the store, so publishing without one
-        would put a lecture on the CDN that every student gets a 404 for. Both
-        are set in the publishing panel on the course page, in that order
-        (`PUT /courses/{c}/address`, then `PUT /courses/{c}/reader-password`).
+        **One refusal before a single key is copied.** `409 address_required`
+        — the course has no published address yet, and every site key is
+        under it. It is set in the publishing panel on the course page
+        (`PUT /courses/{c}/address`). Reading what is published needs a
+        sign-in and the reading cookie (`POST /reading/{a}`); there is no class
+        password to set.
 
         Everything written to the site is under the **address**: `<address>/<lecture>/…`,
         the course-root `theme.css` and the front page's links. The first
         publish stamps `course.publishedFirst`, which fixes the address.
 
         **Two front pages are rewritten** (M28): the course's lecture list at
-        `<address>/index.html`, behind the course's reader password, and the
+        `<address>/index.html`, behind the course's sign-in, and the
         tenant's public landing at `/index.html` — one card per published
         course, with no lecture title on it — rebuilt from every course in the
         tenant so a second author's publish adds a card rather than replacing
@@ -1480,9 +1417,8 @@ paths:
         '404': { $ref: '#/components/responses/notFound' }
         '409':
           description: |
-            `address_required` — the course has no published address; then
-            `reader_password_required` — it has no reader password. Nothing was
-            copied either way. `course` names it.
+            `address_required` — the course has no published address. Nothing
+            was copied. `course` names it.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -2699,11 +2635,13 @@ paths:
       summary: The student's landing for one course — its weeks, its lectures and its exercises.
       description: |
         What a signed-in student on this course's roster sees: the course's
-        identity, and its weeks. Each week carries its **lectures** — with the
-        published URL on the site when there is one, and no `url` at all when
-        there is not — and its **exercises**, each with what it is worth, its
-        dates and *this student's* state on it: `not_started`, `draft`,
-        `submitted`, or `graded` with the released total.
+        identity, and its weeks. Each week carries its **lectures** — the
+        published ones only, each with its URL on the site; a lecture never
+        published is absent (2026-09-29) — its **exercises**, each with what it
+        is worth, its dates and *this student's* state on it: `not_started`,
+        `draft`, `submitted`, or `graded` with the released total — and its
+        **published demos**, each with the published lectures that wire it
+        (`usedIn`), so the page can draw a demo under its lecture.
 
         **An exercise whose `release.from` is in the future is absent**, not
         listed as locked: a sheet a student cannot open is a sheet whose title
@@ -3105,10 +3043,9 @@ paths:
         every response under a folder named `demos`, and this page loads the
         platform bundle.
 
-        The same two refusals as a lecture publish, in the same order: `409
-        address_required`, then `409 reader_password_required`. A third,
-        `409 demo_file_required`, is this route's own — a demo with no
-        `demo.html` would get a page framing a 404.
+        The same refusal as a lecture publish, `409 address_required`, and a
+        second, `409 demo_file_required`, that is this route's own — a demo
+        with no `demo.html` would get a page framing a 404.
 
         The first publish of anything in a course — a demo as much as a
         lecture — stamps `course.publishedFirst`, which fixes the address:
@@ -3138,8 +3075,7 @@ paths:
         '409':
           description: >-
             `address_required` — the course has no published address; then
-            `reader_password_required`; then `demo_file_required` — the demo
-            has no `demo.html` to publish.
+            `demo_file_required` — the demo has no `demo.html` to publish.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -3795,6 +3731,7 @@ components:
             title: { type: string }
             titleEn: { type: [string, 'null'] }
             term: { type: [string, 'null'] }
+            lecturer: { type: [string, 'null'] }
             lang: { type: string, enum: [he, en] }
             dir: { type: string, enum: [rtl, ltr] }
             address: { type: [string, 'null'] }
@@ -3824,12 +3761,29 @@ components:
                     url:
                       type: string
                       description: |
-                        The published page on the site. **Absent** when the
-                        lecture has never been published — a link that 404s is
-                        worse than a line that says nothing.
+                        The published page on the site. A lecture that has
+                        never been published is not listed at all.
               exercises:
                 type: array
                 items: { $ref: '#/components/schemas/StudentExerciseRow' }
+              demos:
+                type: array
+                description: The week's **published** demos; a draft is absent.
+                items:
+                  type: object
+                  properties:
+                    slug: { type: string }
+                    title: { type: string }
+                    description: { type: [string, 'null'] }
+                    week: { type: [integer, 'null'] }
+                    usedIn:
+                      type: array
+                      items: { type: string }
+                      description: |
+                        The **published** lectures that wire the demo, in the
+                        course's order — what the page nests it under. A draft
+                        lecture is left out.
+                    url: { type: string, description: the demo's page on the site }
 
     StudentExerciseRow:
       type: object
@@ -3898,18 +3852,6 @@ components:
         testStudent: { type: boolean }
         notYetOpen: { type: boolean }
 
-    ReaderPassword:
-      type: object
-      description: |
-        A course's reader credential as its author reads it back. The user name
-        is the course id; the password is the one a student types at the edge's
-        prompt.
-      required: [user, password, set]
-      properties:
-        user: { type: string, description: the course id, fixed }
-        password: { type: string }
-        set: { type: string, format: date-time }
-        by: { type: [string, 'null'], description: who set it }
     StoredAsset:
       type: object
       description: What a direct `PUT` of a figure or a data file answers with.
@@ -4067,8 +4009,8 @@ components:
         address:
           type: [string, 'null']
           description: >-
-            the published prefix — the URL students read, the edge's key and
-            the reader user name. Null until an author sets it with
+            the published prefix — the URL students read, and the name the
+            edge and the reading cookie know the course by. Null until an author sets it with
             `PUT /courses/{c}/address`, and fixed once `publishedFirst` is set.
         publishedFirst:
           type: [string, 'null']
