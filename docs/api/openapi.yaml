@@ -212,6 +212,13 @@ paths:
       tags: [courses]
       operationId: listCourses
       summary: Every course under the tenant.
+      description: |
+        Filtered to the caller's grants: an admin sees every course, everyone
+        else the ones their access record names. A course the caller is a
+        **student** of is a row too, with `role: student`, a `lectures` count
+        of the published lectures only and no `lastModified`; a `students`
+        session may call this route and no other outside `/me` and the reading
+        cookie. A token or a connector gets no student row.
       responses:
         '200':
           description: The courses.
@@ -227,11 +234,13 @@ paths:
                       type: object
                       properties:
                         id: { type: string }
+                        role: { type: string, enum: [admin, author, ta, student] }
                         title: { type: string }
                         titleEn: { type: [string, 'null'] }
                         term: { type: [string, 'null'] }
-                        lectures: { type: integer, description: 'how many, not which' }
-                        lastModified: { type: [string, 'null'], format: date-time }
+                        lang: { type: string, description: 'the course''s language, which the title is written in' }
+                        lectures: { type: integer, description: 'how many, not which; for a student, the published ones' }
+                        lastModified: { type: [string, 'null'], format: date-time, description: 'absent on a student''s row' }
         '401': { $ref: '#/components/responses/unauthenticated' }
     post:
       tags: [courses]
@@ -731,7 +740,9 @@ paths:
         `Secure`, `HttpOnly`, `SameSite=Lax`, twelve hours. It carries no
         personal data. The studio calls this when a course page opens and
         every few hours while it stays open; the body says when it expires and
-        nothing else.
+        which course the address is — `course`, the id, which the studio's
+        resolver (`/studio/r/<address>/…`, where the edge sends an old link to a
+        notes page) needs to draw the lecture's studio page.
 
         **A session only**: a token or a connector gets `403
         session_required`. No role on the course is `403 not_on_course`, and
@@ -747,9 +758,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [address, expires]
+                required: [address, course, expires]
                 properties:
                   address: { type: string }
+                  course: { type: string, description: 'the course''s id: what the studio''s URLs name it by' }
                   expires: { type: string, format: date-time }
         '400': { $ref: '#/components/responses/badRequest' }
         '403': { $ref: '#/components/responses/forbidden' }
@@ -861,6 +873,17 @@ paths:
                       id: { type: string }
                       lang: { type: string, enum: [he, en] }
                       dir: { type: string, enum: [rtl, ltr] }
+                  site:
+                    type: [string, 'null']
+                    description: >-
+                      where the lecture is published, as the store key a
+                      publish job carries; null for a course with no address
+                  pdf:
+                    type: boolean
+                    description: >-
+                      whether the published lecture's `notes.pdf` is on the
+                      site yet — false for a lecture never published, and for
+                      the seconds after a publish before the render writes it
                   manifest: { $ref: '#/components/schemas/Lecture' }
                   manifestEtag: { type: [string, 'null'] }
                   notes: { $ref: '#/components/schemas/StoredDocument' }
@@ -3093,7 +3116,9 @@ paths:
           headers:
             Content-Security-Policy:
               schema: { type: string }
-              description: The demo CSP (`src/demoCsp.js`) — no origin except frame-ancestors
+              description: >-
+                The demo CSP (`src/demoCsp.js`) — `sandbox allow-scripts`, and no
+                origin except the studio's in frame-ancestors
           content:
             text/html: { schema: { type: string } }
         '404': { description: No such demo, or no document uploaded yet }
@@ -3110,7 +3135,22 @@ paths:
         content:
           text/html: { schema: { type: string } }
       responses:
-        '200': { description: Written }
+        '200':
+          description: >-
+            Written. `flags` is what the upload tripwire found (an empty
+            `hits` for a clean file); a flagged file is saved all the same,
+            records the flags on the demo and writes `demo.flagged`.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  slug: { type: string }
+                  file: { type: string }
+                  etag: { type: string }
+                  versionId: { type: [string, 'null'] }
+                  bytes: { type: integer }
+                  flags: { $ref: '#/components/schemas/DemoFlags' }
         '400': { description: invalid_type or empty_body }
         '404': { description: No demo.json for this slug }
         '412': { description: The condition did not hold }
@@ -3763,6 +3803,13 @@ components:
                       description: |
                         The published page on the site. A lecture that has
                         never been published is not listed at all.
+                    pdf:
+                      type: boolean
+                      description: |
+                        Whether the lecture's `notes.pdf` is on the site yet —
+                        the render writes it seconds after the publish. The
+                        PDF sits beside `url` (`…/notes` → `…/notes.pdf`) and
+                        needs the same reading cookie.
               exercises:
                 type: array
                 items: { $ref: '#/components/schemas/StudentExerciseRow' }
@@ -3864,6 +3911,29 @@ components:
         maxBytes: { type: integer, description: the cap, 5 MB }
         etag: { type: string }
         versionId: { type: [string, 'null'] }
+    DemoFlags:
+      type: object
+      description: >-
+        What in a `demo.html` can send data out of the page (plan 04): WebRTC,
+        a navigation, `window.open`, a write through `top.` / `parent.`,
+        `document.domain`, an http(s) URL. A tripwire, not a gate — the file
+        is saved either way. `hits` is capped at 20; `total` is the count.
+      required: [html, hits, total]
+      properties:
+        html: { type: string, description: the ETag of the demo.html that was scanned }
+        hits:
+          type: array
+          items:
+            type: object
+            required: [kind, what, line]
+            properties:
+              kind:
+                type: string
+                enum: [webrtc, navigation, window-open, outer-write, document-domain, url]
+              what: { type: string, description: the code as written, trimmed to 80 characters }
+              line: { type: integer, minimum: 1 }
+        total: { type: integer, minimum: 0 }
+        at: { type: string, format: date-time }
     DemoManifest:
       type: object
       required: [title]
@@ -3895,6 +3965,13 @@ components:
           properties:
             at: { type: string, format: date-time }
             version: { type: [string, 'null'] }
+        flags:
+          readOnly: true
+          allOf: [{ $ref: '#/components/schemas/DemoFlags' }]
+          description: >-
+            The upload tripwire's record, written when `demo.html` is saved and
+            only while it is about the file that is there. A body carrying it is
+            ignored.
           additionalProperties: false
         author: { type: string }
         version: { type: string }
@@ -4166,6 +4243,17 @@ components:
         actor: { type: [string, 'null'] }
         lastAction: { type: [string, 'null'] }
         published: { $ref: '#/components/schemas/Published' }
+        site:
+          type: [string, 'null']
+          description: >-
+            where the lecture is published, as the store key a publish job
+            carries (`site/published/<tenant>/<address>/<lecture>`); null for a
+            course with no address
+        pdf:
+          type: boolean
+          description: >-
+            whether the published lecture's `notes.pdf` is on the site yet; the
+            render writes it seconds after a publish
         openNotes: { type: integer }
         hasSlides: { type: boolean }
 

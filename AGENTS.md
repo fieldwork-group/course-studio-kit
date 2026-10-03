@@ -431,6 +431,18 @@ demo's own `demo.json` so a published page needs no API to size the frame.
 `docs/demos/format.md` is the format; write a demo when the course has none
 that shows the point.
 
+**A demo must not navigate, open windows or use WebRTC.** The studio stops a
+demo that loads another page — the frame is torn down and the reader sees one
+line saying so, and that includes a demo that calls `location.reload()` — and
+it flags code that can send data out of the page when the file is saved:
+`RTCPeerConnection`, an assignment to `location`, `location.assign` /
+`replace`, `window.open`, a write through `top.` / `parent.`,
+`document.domain`, a meta refresh, any `http:` / `https:` URL. `PUT
+…/demos/{slug}/demo.html` answers what it found as `flags`, and
+`studio_put_demo` says it in its result. A flag is not a refusal, so read it:
+if the line is yours by accident — a URL copied from a source, an example you
+were shown — take it out; if the demo needs it, tell the lecturer why.
+
 `published` is not yours, on a lecture or on a demo. The publish route writes
 it; a body carrying it is a `400`, and the stored value is kept for you when
 you leave it out.

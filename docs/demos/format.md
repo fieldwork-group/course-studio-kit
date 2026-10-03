@@ -101,22 +101,51 @@ on paper.
 **The sandbox is `allow-scripts` and nothing else.** No `allow-same-origin`, so
 the frame is an *opaque origin*: no cookies, no `localStorage`, no
 `sessionStorage`, no reach into the page around it and no way to read anything
-belonging to the site. No forms, no popups, no navigation.
+belonging to the site. No forms, no popups, no navigating the page around it.
 
-**The demo has no network.** It is served under this policy, and the same
-policy is injected as a `<meta http-equiv>` whenever the file is mounted from
+**The demo has no network APIs.** It is served under this policy, and the same
+policy, less its two header-only directives, is injected as a
+`<meta http-equiv>` right after the doctype whenever the file is mounted from
 its text rather than from a URL:
 
 ```
 default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline';
 img-src data: blob:; font-src data:; media-src data: blob:; worker-src blob:;
-frame-ancestors 'self'
+sandbox allow-scripts; frame-ancestors 'self' <the studio's origin>
 ```
 
-No origin appears anywhere except `frame-ancestors`. There is deliberately no
-`connect-src`, so `fetch`, `XMLHttpRequest`, `WebSocket` and `sendBeacon` are
-all refused by `default-src 'none'`. `'unsafe-eval'` is allowed because some
-libraries need it, and with no network and no origin it buys nothing.
+No origin appears anywhere except `frame-ancestors`, where the studio is named
+because a lecture read inside the studio puts it at the top of the frame chain.
+There is deliberately no `connect-src`, so `fetch`, `XMLHttpRequest`,
+`WebSocket` and `sendBeacon` are all refused by `default-src 'none'`.
+`'unsafe-eval'` is allowed because some libraries need it, and with no network
+and no origin it buys nothing. `sandbox allow-scripts` makes the file an opaque
+origin even when somebody opens it in a tab of its own rather than in a frame.
+
+**What the policy does not stop, and what the platform does instead**
+(2026-10-01, measured in Chromium):
+
+- **A demo must not navigate.** No CSP directive governs a frame loading
+  another page into itself. On the course site and in the studio the page
+  around the demo refuses another origin with its own `frame-src`; a
+  standalone file opened from disk has no such page. Everywhere, a demo that
+  loads another page (`location.href = …`, `location.assign`, a link it
+  follows, `location.reload()` too) is **torn down**: the frame is removed and
+  the still comes back with one line saying why. One request may already have
+  left by then, carrying whatever was in its URL.
+- **A demo must not use WebRTC.** `RTCPeerConnection` reaches a STUN server of
+  the demo's choosing under `default-src 'none'`, and no browser enforces a
+  directive that stops it. That gives away the reader's public IP address and
+  the time.
+- **A demo must not open windows** or write through `top.` or `parent.` —
+  the sandbox refuses both, and they mean the demo is reaching for something.
+
+When a `demo.html` is saved the studio scans it for these — WebRTC, an
+assignment to `location`, `location.assign` / `replace`, `window.open`, a
+write through `top.` / `parent.`, `document.domain`, a meta refresh, and any
+`http:` / `https:` URL — and **flags** what it finds on the demo's page and in
+the MCP tool's answer. It is a warning, not a refusal: a link to the demo's
+source trips it too, and the demo saves and publishes either way.
 
 Two things follow for an author, and they are the only two rules that ever
 catch people out:
@@ -382,7 +411,8 @@ There is no publish tool in the MCP: publishing is the author's click.
 ## The rules, in one place
 
 1. One folder, three files, those names.
-2. `demo.html` makes **no request**. Everything inlined.
+2. `demo.html` makes **no request** and loads no other page. Everything
+   inlined; no navigation, no WebRTC.
 3. `sandbox="allow-scripts"` and nothing else, always, everywhere it is
    mounted.
 4. 2 MB, 1 MB, 4 KB. The cap is on bytes, not on content.

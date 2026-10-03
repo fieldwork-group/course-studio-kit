@@ -17824,6 +17824,9 @@ var STRINGS = {
     pause: "עצור",
     /** the demo frame's reset button *(bundle)* */
     reset: "אתחל",
+    /** where the transport was, once a demo that navigated away has been
+     *  torn down (plan 04, 2026-10-01) *(bundle)* */
+    demoStopped: "ההדגמה ניסתה לטעון דף אחר ונעצרה.",
     /** what stands in for a demo whose bundle never loaded *(bundle)* */
     demoOffline: "ההדגמה האינטראקטיבית לא נטענה. ודאו שתיקיית ההדגמה נמצאת ליד הדף. שאר הסיכומים — הנוסחאות, התוכן והתרגילים — נקראים כרגיל גם בלעדיה.",
     /** the label the theme prints over a `div.think` *(css)* */
@@ -17847,6 +17850,7 @@ var STRINGS = {
     play: "Play",
     pause: "Pause",
     reset: "Reset",
+    demoStopped: "This demo tried to load another page and was stopped.",
     demoOffline: "The interactive demo did not load. Check that the demo folder sits beside the page. The rest of the notes — the formulas, the text and the exercises — read as they always do.",
     think: "Think",
     figurePending: "Figure in preparation",
