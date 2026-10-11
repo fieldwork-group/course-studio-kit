@@ -346,6 +346,7 @@ check; there is no other.
 ```bash
 studio demos list                                   # the course's library
 studio demos pull  courses/<course>                 # every demo, three files each
+studio demos pull  courses/<course>/demos/<slug>   # that one demo
 studio demos push  courses/<course>/demos/<slug>    # one demo, back up
 studio demos publish <course> <slug>                # put it on the course site
 ```

@@ -53,7 +53,7 @@ any folder inside it — so nothing else has to hold it. An exported
 | `pull <lecture-dir>` | one lecture, and the demos it wires | 2 no such lecture |
 | `push [<lecture-dir>]` | the working copy back, with the ETags `pull` recorded; never merges | 2 never pulled · 3 conflict, pull first |
 | `notes list \| add \| reply \| done \| reopen \| delete` | the author-notes thread — where an agent asks instead of guessing | 2 no such note |
-| `demos list \| pull \| push` | the course's demos, three files each under `courses/<id>/demos/<slug>/`; `list` shows each one's week and whether it was inherited from the lectures that wire it | 2 no `demo.json` · 3 conflict |
+| `demos list \| pull \| push` | the course's demos, three files each under `courses/<id>/demos/<slug>/`; `pull` takes the course folder for all of them or one demo's folder for that one; `list` shows each one's week and whether it was inherited from the lectures that wire it | 2 no `demo.json` · 3 conflict |
 | `demos publish <course> <slug>` | put one demo on the course site on its own: its two files, the page under `d/<slug>/`, and the course index | 2 no such demo |
 | `exercises list \| pull \| push` | the course's exercise sheets, three files each under `courses/<id>/exercises/<x>/` — the questions, the private key, the manifest; an author's and a TA's | 2 no `exercise.json` · 3 conflict |
 | `exercises delete <course> <exercise> [--yes "<title>"]` | delete a sheet — the questions and the key; asks for the title; refused once a student has answered it | 1 wrong title, or answered · 2 no such exercise |
