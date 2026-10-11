@@ -18256,6 +18256,7 @@ function takeDir(rest2) {
 var stateFile = (dir) => path4.join(dir, STATE_DIR, "state.json");
 var threadFile = (dir) => path4.join(dir, STATE_DIR, "author-notes.json");
 var configFile = (dir) => path4.join(dir, STATE_DIR, "config.json");
+var strongEtag = (etag) => typeof etag === "string" ? etag.replace(/^W\//, "") : null;
 async function readState(dir) {
   try {
     return JSON.parse(await fsp.readFile(stateFile(dir), "utf8"));
@@ -18403,7 +18404,7 @@ async function pullDemo(client, { course, slug, dir, log = console.log }) {
       continue;
     }
     await writeFile(path5.join(dir, slug, file.name), res.bytes);
-    etags[file.name] = res.headers.get("etag") ?? null;
+    etags[file.name] = strongEtag(res.headers.get("etag"));
     written.push(`${slug}/${file.name}`);
   }
   return { slug, etags, written };
@@ -18413,6 +18414,9 @@ async function demosPull(client, courseDir2, { course, only = null, announce = t
   const list = await client.call("GET", `/courses/${course}/demos`);
   const demos = expectOk(list, `GET ${course}/demos`).demos ?? [];
   const wanted = only ? demos.filter((d) => only.includes(d.slug)) : demos;
+  for (const slug of only ?? []) {
+    if (!wanted.some((d) => d.slug === slug)) throw new CliError(`no demo ${slug} in ${course}`, 2);
+  }
   const written = [];
   const etags = {};
   for (const demo of wanted) {
@@ -18435,6 +18439,8 @@ async function demosPull(client, courseDir2, { course, only = null, announce = t
   }
   return { dir, course, demos: wanted.map((d) => d.slug), written, etags };
 }
+var staleMessage = (name, detail) => `${name}: the studio has a newer version (${detail}).
+  run \`studio demos pull\` first — this command does not merge a binary.`;
 async function demosPush(client, demoDir, { course, log = console.log, stateless = false } = {}) {
   const dir = path5.resolve(demoDir);
   const slug = path5.basename(dir);
@@ -18452,36 +18458,44 @@ async function demosPush(client, demoDir, { course, log = console.log, stateless
   const courseDir2 = path5.resolve(dir, "..", "..");
   const state = stateless ? null : await readState(courseDir2);
   const known = state?.demos?.[slug] ?? {};
-  const etags = { ...known };
+  const etags = Object.fromEntries(Object.entries(known).map(([name, etag]) => [name, strongEtag(etag)]));
   const sent = [];
-  const saved = await client.call("PUT", `/courses/${course}/demos/${slug}`, { body: manifest });
-  if (saved.status === 412) throw new CliError(`demo.json: ${apiMessage(saved)}; run \`studio demos pull\` first`, 3);
-  expectOk(saved, `PUT ${course}/demos/${slug}`);
-  etags["demo.json"] = saved.headers.get("etag") ?? saved.json?.etag ?? null;
-  sent.push("demo.json");
+  const files = [];
   for (const file of FILES.slice(1)) {
     const bytes = await readIf2(path5.join(dir, file.name));
     if (!bytes) {
       log(`  ! ${file.name}: not in ${dir}`);
       continue;
     }
+    files.push({ ...file, bytes });
+  }
+  if (!stateless) {
+    const now = await client.call("GET", `/courses/${course}/demos/${slug}`);
+    const theirs = now.status === 200 ? now.json?.etags : null;
+    for (const file of theirs ? files : []) {
+      if (etags[file.name] && etags[file.name] !== (theirs[file.name] ?? null)) {
+        throw new CliError(staleMessage(file.name, "it changed since the pull"), 3);
+      }
+    }
+  }
+  const { published, ...body } = manifest;
+  const saved = await client.call("PUT", `/courses/${course}/demos/${slug}`, { body });
+  if (saved.status === 412) throw new CliError(`demo.json: ${apiMessage(saved)}; run \`studio demos pull\` first`, 3);
+  expectOk(saved, `PUT ${course}/demos/${slug}`);
+  etags["demo.json"] = strongEtag(saved.headers.get("etag")) ?? saved.json?.etag ?? null;
+  sent.push("demo.json");
+  for (const file of files) {
     const headers = { "content-type": file.type };
     if (etags[file.name]) headers["if-match"] = etags[file.name];
     const res = await client.call("PUT", `/courses/${course}/demos/${slug}/${file.name}`, {
-      body: bytes,
+      body: file.bytes,
       raw: true,
       headers
     });
-    if (res.status === 412) {
-      throw new CliError(
-        `${file.name}: the studio has a newer version (${apiMessage(res)}).
-  run \`studio demos pull\` first — this command does not merge a binary.`,
-        3
-      );
-    }
+    if (res.status === 412) throw new CliError(staleMessage(file.name, apiMessage(res)), 3);
     expectOk(res, `PUT ${slug}/${file.name}`);
     etags[file.name] = res.json?.etag ?? null;
-    sent.push(`${file.name} (${bytes.length} B)`);
+    sent.push(`${file.name} (${file.bytes.length} B)`);
   }
   if (!stateless) {
     await writeState(courseDir2, {
@@ -20020,7 +20034,7 @@ var USAGE = `usage:
   studio tokens  revoke  <id>
   studio address set   <course> <address>         once, before the first publish
   studio demos   list  [--course id] [--json]
-  studio demos   pull  [<course-dir>] [--course id]
+  studio demos   pull  [<course-dir> | <course-dir>/demos/<slug>] [--course id]
   studio demos   push  <course-dir>/demos/<slug> [--course id]
   studio demos   publish <course> <slug>          the file, its page and the index
   studio exercises list  <course>                  [--json]
@@ -20163,7 +20177,8 @@ async function demosCommand(sub, rest2) {
     return demosPublish(client2, { course: course2, slug: rest2[1], log: console.log });
   }
   const dirArg = rest2[0];
-  const near = sub === "push" && dirArg ? path13.resolve(dirArg, "..", "..") : dirArg ?? ".";
+  const oneDemo = sub === "pull" && dirArg && path13.basename(path13.resolve(dirArg, "..")) === "demos";
+  const near = (sub === "push" || oneDemo) && dirArg ? path13.resolve(dirArg, "..", "..") : dirArg ?? ".";
   const { client, course } = await openLecture({
     ...conn,
     dir: near,
@@ -20175,7 +20190,7 @@ async function demosCommand(sub, rest2) {
     case "list":
       return demosList(client, { ...common, json: Boolean(args.json) });
     case "pull":
-      return demosPull(client, dirArg ?? ".", common);
+      return oneDemo ? demosPull(client, near, { ...common, only: [path13.basename(path13.resolve(dirArg))] }) : demosPull(client, dirArg ?? ".", common);
     case "push":
       if (!dirArg) throw new CliError("usage: studio demos push <course-dir>/demos/<slug>");
       return demosPush(client, dirArg, common);

@@ -107,10 +107,9 @@ The routes are below and the CLI is a thin client over them.
 `https://studio.fieldwork-group.com/api/mcp`. Add that URL as a custom
 connector, sign in with your studio account, and the tools below become
 available in the conversation. Nothing is installed and no credential ends up on
-your machine — Claude keeps the tokens and the model never sees them. It is
-second rather than first for one reason: **the client id and secret come from a
-studio administrator**, because Cognito has no dynamic client registration, so
-somebody has to hand them to you before you start.
+your machine — Claude keeps the tokens and the model never sees them. The one
+value the setup needs is a **client id**, which the studio's landing page
+prints under this URL; there is no secret and nobody to ask.
 
 What a chat can do through it is the whole edit loop — read a lecture, change a
 fragment, upload a figure, leave a note, preview, publish. What it cannot do is
@@ -121,24 +120,20 @@ render its still image. Those want a shell, which is the first way in.
 
 - **Claude Desktop · claude.ai · mobile · Cowork** — *Settings → Connectors →
   Add custom connector*, paste the URL, open *Advanced settings* and enter the
-  **client id** and **client secret** the studio's administrator gives you.
+  **client id** from the studio's landing page, leaving the secret empty.
   (Cognito has no dynamic client registration, so the client is pre-registered;
-  those two values are the whole of the setup.) Click *Connect*, sign in on the
-  page that opens, and approve the scopes.
+  it is a public client and that one value is the whole of the setup.) Click
+  *Connect* and sign in on the page that opens.
 - **Claude Code** —
-
-  ```bash
-  claude mcp add --transport http studio https://studio.fieldwork-group.com/api/mcp
-  ```
-
-  and `/mcp` in the session to sign in. If the browser round trip fails — the
-  loopback callback port is not guaranteed to be one Cognito has been told
-  about — use a token instead:
 
   ```bash
   claude mcp add --transport http studio https://studio.fieldwork-group.com/api/mcp \
     --header 'Authorization: Bearer cst_…'
   ```
+
+  with a token from *API access*. The browser sign-in is not offered to Claude
+  Code: it comes back to a port on your own machine, and the studio registers
+  no such address for a client that has no secret.
 
 The tools are named `studio_*`; `studio_whoami` first, then `studio_guides`.
 Read the resources `studio://guide` (this file) and `studio://vocabulary`
