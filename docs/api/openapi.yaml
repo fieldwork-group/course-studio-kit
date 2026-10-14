@@ -936,10 +936,10 @@ paths:
         manifest, both fragments, the figures, the data, the notes thread, the
         publish jobs and the lock; the id leaves `course.lectures` under
         `If-Match`; and if the lecture had been published, every object under
-        its site prefix goes too, both front pages are rewritten without it and
-        the CDN is purged for its paths and for both index pages. There is no
-        separate *unpublish*, which is why this reconciles the site itself.
-        Event `lecture.delete`.
+        its site prefix goes too, both front pages are rewritten without it,
+        so is the page of every published demo it wired, and the CDN is purged
+        for those paths. To take the page down and **keep the draft**, use
+        `POST …/withdraw` instead. Event `lecture.delete`.
 
         Nothing is recoverable through the studio. The content bucket is
         versioned and noncurrent versions live for a year, so a delete can be
@@ -1375,6 +1375,10 @@ paths:
         The same renderer that publishes, so what you see here cannot drift
         from what a student gets. `Cache-Control: no-store`, because a cached
         preview of a draft is a lie.
+
+        **With one difference, on purpose**: the preview is the draft as its
+        author and the TAs read it, so it keeps every `div.lecturer-only`
+        block. A published page never has one — publish takes them out.
       responses:
         '200':
           description: The page.
@@ -1422,6 +1426,18 @@ paths:
         tenant so a second author's publish adds a card rather than replacing
         one. Both keys are in the job's `keys` list.
 
+        **Lecturer-only blocks are removed first** (M56). Every
+        `div.lecturer-only` — and anything else carrying that class — is taken
+        out of the notes and the deck by the schema before a page is
+        rendered, and the rendered pages are checked again before anything is
+        written: `500 lecturer_content_in_student_page` means a block got
+        past the strip, and **no key, no job record and no event was
+        written**. When the notes hold such a block the publish also files a
+        **lecturer's copy** beside the draft — never on the site, and not in
+        `keys` — from which a second PDF is printed, and
+        `published.lecturer` is `true`; `GET …/lecturer-pdf` hands that PDF
+        out. A publish that finds no such block deletes the previous copy.
+
         Events `publish.start`, then `publish.done` or `publish.failed`.
       responses:
         '202':
@@ -1445,6 +1461,213 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: |
+            `lecturer_content_in_student_page` — a page for students would
+            still have carried a lecturer-only element after the strip.
+            Nothing was written. It is a fault in the studio, not in the
+            lecture.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /courses/{c}/lectures/{l}/lecturer-pdf:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+    get:
+      tags: [publish]
+      operationId: getLecturerPdf
+      summary: A one-minute link to the lecturer's PDF — the published notes with the lecturer-only blocks in.
+      description: |
+        A lecture whose notes hold `div.lecturer-only` blocks gets a second
+        PDF at every publish, with those blocks in. It is filed with the
+        draft and is **never on the site**; this route is the only way to it.
+
+        An author's and a TA's (family `read`) — the people who already read
+        those blocks in the draft. A student is refused, and the reading
+        cookie is not an API credential.
+
+        `200 { url, expires }`: a link to the file that needs no header, so a
+        browser tab can open it, good until `expires` (one minute). It is
+        **the published version's**, like the students' PDF: an edit since
+        the last publish is not in it.
+
+        `404 no_lecturer_copy` when the last publish filed no copy (the notes
+        held no lecturer-only block, or the lecture is not published), and
+        for the seconds after a publish while the PDF is still being made.
+      responses:
+        '200':
+          description: The link.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, description: 'Absolute on a deployment; `/api/_download?…` on the local store.' }
+                  expires: { type: string, format: date-time }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404':
+          description: '`no_lecturer_copy` — there is no lecturer''s PDF for this lecture, or not yet.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /courses/{c}/lectures/{l}/draft-pdf:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+    post:
+      tags: [publish]
+      operationId: printDraftPdf
+      summary: Print a PDF of the draft, lecturer-only blocks in, without publishing anything.
+      description: |
+        **What a publish would print now, with the lecturer-only blocks in,
+        made without publishing.** The draft is laid out as a publish lays a
+        lecture out — the same shell, the same platform base, the same
+        figures, data, wired demos and `theme.css` — in a private folder of
+        the content area, and the render prints that folder. **Nothing is
+        written to the site** and nothing changes about the lecture; there is
+        no event. The students' PDF and the lecturer's PDF stay the published
+        version's.
+
+        An author's and a TA's (family `read`). A token needs `write`, as for
+        any `POST`.
+
+        The page carries a line under the lecture head — *Draft · 13.10.2026
+        14:32 · not the published version* — with the time in `tz`.
+
+        **An unchanged draft is not printed twice.** When nothing a print is
+        made from has changed since the last one (the notes, the manifest,
+        `course.json`, the theme, the platform base, the figures, the data,
+        the wired demos' files), that print ended well and its file is still
+        there, the answer is `200` with the link and `reused: true`, and
+        nothing is written. A print is kept for two days.
+
+        **One print at a time per lecture.** While one runs — up to 150
+        seconds — a second `POST` is `409 draft_print_in_progress` and names
+        the running job; follow it with `GET`.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tz:
+                  type: string
+                  description: An IANA zone name for the stamp's time (the browser's). Absent or unknown reads as UTC.
+      responses:
+        '200':
+          description: Nothing changed since the last print; this is that file.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/DraftPrint'
+                  - type: object
+                    properties:
+                      reused: { type: boolean, enum: [true] }
+        '202':
+          description: A print was started. Poll `GET` for it.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job: { type: string }
+                  startedAt: { type: string, format: date-time }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409':
+          description: '`draft_print_in_progress` — a print of this draft is running. `job` and `startedAt` name it.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    get:
+      tags: [publish]
+      operationId: getDraftPdf
+      summary: The state of the lecture's draft print, and a one-minute link to the file when it is done.
+      description: |
+        `rendering` while the job has no outcome; `done` with `url` and
+        `expires` — a link that needs no header and **downloads** the file,
+        named `…-draft.pdf`; `failed` with the first line of `error`. A job
+        older than 150 seconds with no outcome is `failed`: the render did
+        not answer.
+
+        `of` is the ETag of the notes the print was made from.
+
+        An author's and a TA's (family `read`).
+      responses:
+        '200':
+          description: The print.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DraftPrint' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404':
+          description: '`no_draft_print` — nobody has printed this draft, or the print has expired.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /courses/{c}/lectures/{l}/withdraw:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/lecture'
+    post:
+      tags: [publish]
+      operationId: withdrawLecture
+      summary: Take the published lecture off the site and keep the draft.
+      description: |
+        **The publish, backwards, and nothing else.** `published` comes off the
+        manifest (under `If-Match`, so a settings save that landed in between
+        is a `412` and nothing was removed), every object under the lecture's
+        site prefix is deleted, the course's lecture list and the tenant's
+        landing are rewritten without it, the page of every **published** demo
+        the lecture wires is rewritten without its *used in* link, and the CDN
+        is purged for those paths. Students stop seeing the lecture at once.
+
+        **The draft is not touched**: the notes, the deck, the figures, the
+        notes thread, the lock and the history stay as they are, and `POST
+        …/publish` puts the page back. `course.publishedFirst` stays, so the
+        address stays fixed; so do the course's `theme.css`, the publish job
+        records and every demo's own file.
+
+        **Safe to repeat.** A lecture that is not published — never was, or
+        was withdrawn already — answers `200` with three empty lists and
+        writes nothing, not a page and not an event. A call after one that
+        failed halfway finishes the work: the pages are rewritten whenever the
+        manifest still carried the stamp or a key was still on the site. A
+        course with no address has nothing on the site and answers the same
+        three empty lists.
+
+        A token needs the `publish` scope as well as `write`, as for a
+        publish. Event `lecture.withdraw`.
+      responses:
+        '200':
+          description: What came down. Three empty lists when nothing was published.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [removed, rewritten, paths]
+                properties:
+                  removed:
+                    type: array
+                    items: { type: string }
+                    description: the site keys that were deleted
+                  rewritten:
+                    type: array
+                    items: { type: string }
+                    description: the pages written again — the course's list, the landing, the demo pages
+                  paths:
+                    type: array
+                    items: { type: string }
+                    description: the CDN paths that were purged
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '412': { $ref: '#/components/responses/precondition' }
 
   /courses/{c}/lectures/{l}/publish/{job}:
     parameters:
@@ -2700,10 +2923,14 @@ paths:
         `grades.released` is set on the exercise**, the `accepted` items and
         scores of `review.json`.
 
-        Three absences are the point, and each is absent from the JSON rather
+        Four absences are the point, and each is absent from the JSON rather
         than hidden by the page:
 
         - **`key.html` is never here.** This file never reads that key.
+        - **A lecturer-only block is never here.** `questions` is the stored
+          fragment with every `div.lecturer-only` taken out by the schema, as
+          a published page has; a sheet that would still carry one is a
+          `500 lecturer_content_in_student_page` and no questions.
         - **A `draft` review item or score is never here**, whatever the
           release state: a draft is a model's suggestion or an unfinished
           sentence, and `via` and `author` are dropped with it.
@@ -4198,6 +4425,19 @@ components:
           aspect: { type: number }
           title: { type: string }
 
+    DraftPrint:
+      type: object
+      description: One print of a lecture's draft (`…/draft-pdf`).
+      required: [status, job, startedAt]
+      properties:
+        status: { type: string, enum: [rendering, done, failed] }
+        job: { type: string }
+        startedAt: { type: string, format: date-time }
+        of: { type: [string, 'null'], description: The ETag of the notes the print was made from. }
+        url: { type: string, description: 'When `done`. Absolute on a deployment; `/api/_download?…` on the local store.' }
+        expires: { type: string, format: date-time, description: When `done`; one minute. }
+        error: { type: string, description: When `failed`; the first line. }
+
     Published:
       type: [object, 'null']
       description: |
@@ -4214,6 +4454,12 @@ components:
             publish, which `GET …/pending` compares with the manifest now to
             say the settings changed too. Absent on a publish from before
             2026-09-27.
+        lecturer:
+          type: boolean
+          description: |
+            Whether that publish filed a lecturer's copy — the notes held a
+            lecturer-only block — so `GET …/lecturer-pdf` has a PDF to hand
+            out. Absent on a publish from before 2026-10-12.
 
     PendingChange:
       type: object
@@ -4620,6 +4866,15 @@ components:
         pdf: { type: [string, 'null'] }
         print: { type: [string, 'null'] }
         error: { type: [string, 'null'] }
+        lecturerPdf:
+          type: string
+          enum: [rendering, done, failed]
+          description: |
+            The local store only: how the print of the lecturer's copy went.
+            It never changes `status` — the students' PDF does not wait on it
+            and does not fail with it. On a deployment the render function
+            prints it and this field is absent.
+        lecturerError: { type: [string, 'null'] }
 
     Anchor:
       type: object

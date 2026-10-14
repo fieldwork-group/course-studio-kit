@@ -32,6 +32,7 @@ claims:
 | `think` | `div` | A question to the room, usually holding a `details`/`summary` pair whose summary is the course's word for *answer*. |
 | `try` | `div` | Something for the reader to do with a demo. |
 | `note` | `div`, `p` | An aside. Quieter than the surrounding prose, not a different kind of claim. |
+| `lecturer-only` | `div` | **For the people teaching, and never published.** A step to do at the board, a reminder, a remark for the TAs. It holds whatever a callout holds, at any length. The author and the TAs read it in the studio and in the lecturer's PDF; the schema takes it out of every page written for students before the page exists — it is not sent and hidden. See *A block students never get*, below. |
 | `cols`, `cols top` | `div` | Two columns. Layout, not meaning. |
 | `summary` | `div` | The end-of-section recap. |
 | `fig`, `fig-slide` | `figure` | A figure in the notes; the `-slide` variants are cut for the deck's measure. |
@@ -62,6 +63,38 @@ claims:
 3. **A slide that restates a paragraph of the notes should not exist.** The
    notes are written first and carry every derivation; the deck is *cut from*
    them and keeps only the boxed results, the setup figures and the demos.
+
+## A block students never get
+
+`<div class="lecturer-only">` is a callout like the others — the same
+content, a `data-id`, it round-trips — with one difference that is the whole
+point of it: **it is removed from the document before a student's page is
+written.** Publish strips it from the notes and from the deck, the questions
+of an exercise are stripped before a student is sent them, and a page that
+would still carry the class is refused rather than written
+(`500 lecturer_content_in_student_page`). The draft keeps it, the draft
+preview shows it, and a publish of a lecture that has one also makes a
+**lecturer's PDF** with those blocks in, which never goes on the site.
+
+The rule is about the class and not about the `div`: anything carrying the
+token `lecturer-only` — a paragraph, a list item, a table row, a `span`, a raw
+block — is removed the same way. Write the `div`; the rest is a safety net.
+
+Two rules for whoever writes one, a person or a model:
+
+- **Put nothing a student needs inside one.** A definition, a step of the
+  argument the next paragraph leans on, the statement of an exercise: if the
+  handout is wrong without it, it is not lecturer-only. The students' page
+  must read as a complete page with every such block gone — and a section
+  whose only content was one is left as a heading with nothing under it.
+- **Do not move content into or out of one unasked.** Taking a paragraph out
+  of the box publishes it to the class at the next publish; putting one in
+  takes it away from them. Both are the author's decision and neither is an
+  edit.
+
+It is a block, not a section: a whole numbered `section` cannot be
+lecturer-only, because section numbers are written into the page and the
+students' copy would count 1, 2, 4.
 
 <!-- end hand-written -->
 
