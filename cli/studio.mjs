@@ -5121,8 +5121,8 @@ function funescape(_, escaped, escapedWhitespace) {
     String.fromCharCode(high >> 10 | 55296, high & 1023 | 56320)
   );
 }
-function unescapeCSS(cssString) {
-  return cssString.replace(reEscape, funescape);
+function unescapeCSS(cssString2) {
+  return cssString2.replace(reEscape, funescape);
 }
 function isQuote(c) {
   return c === CharCode.SingleQuote || c === CharCode.DoubleQuote;
@@ -17815,6 +17815,9 @@ var STRINGS = {
      *  frame's title when the manifest carries none *(bundle)*, and the word
      *  where a lecture row on the index page has its number */
     demo: "הדגמה",
+    /** the toggle beside a TOC entry that opens its subsections
+     *  (2026-10-14) *(bundle)* */
+    subsections: "תתי-סעיפים",
     /** the heading on a published demo's own page over the lectures that
      *  wire it (2026-09-24) */
     usedIn: "מופיעה בהרצאות",
@@ -17834,7 +17837,18 @@ var STRINGS = {
     /** …over a figure the author has asked for and not yet made *(css)* */
     figurePending: "איור בהכנה",
     /** …and over a demo in the same state *(css)* */
-    demoPending: "הדגמה בהכנה"
+    demoPending: "הדגמה בהכנה",
+    /** …over a `div.lecturer-only`, which only the author, the TAs and the
+     *  lecturer's PDF ever show (2026-10-12) *(css)* */
+    lecturerOnly: "למרצה בלבד",
+    /** the line under the lecture head of the lecturer's copy — the page
+     *  whose body is `audience-staff` — so a printout says what it is *(css)* */
+    lecturerCopy: "עותק המרצה — לא להפצה",
+    /** the line that stands in that place on a **draft print** — a PDF of the
+     *  draft, made without publishing (2026-10-13). `{when}` is the date and
+     *  time the print was made, which the shell writes (`shell.js`,
+     *  `draftLine`); not a css key, because a stylesheet cannot know the time */
+    draftStamp: "טיוטה · {when} · לא הגרסה המפורסמת"
   },
   en: {
     toc: "Contents",
@@ -17846,6 +17860,7 @@ var STRINGS = {
     lecture: "Lecture",
     noCourses: "No course has been published here yet.",
     demo: "Demo",
+    subsections: "Subsections",
     usedIn: "Appears in these lectures",
     play: "Play",
     pause: "Pause",
@@ -17854,7 +17869,10 @@ var STRINGS = {
     demoOffline: "The interactive demo did not load. Check that the demo folder sits beside the page. The rest of the notes — the formulas, the text and the exercises — read as they always do.",
     think: "Think",
     figurePending: "Figure in preparation",
-    demoPending: "Demo in preparation"
+    demoPending: "Demo in preparation",
+    lecturerOnly: "Lecturer only",
+    lecturerCopy: "Lecturer’s copy — not for distribution",
+    draftStamp: "Draft · {when} · not the published version"
   }
 };
 function stringsFor(lang) {
@@ -17862,10 +17880,117 @@ function stringsFor(lang) {
 }
 var stringsOf = (course) => stringsFor(langOf(course));
 
+// studio/schema/src/audience.js
+init_dom();
+var LECTURER_ONLY = "lecturer-only";
+var LECTURER_CONTENT = "lecturer_content_in_student_page";
+var isStaff = (audience) => audience === "staff";
+var hasToken = (cls) => String(cls ?? "").split(/\s+/).some((c) => c.toLowerCase() === LECTURER_ONLY);
+var CLASS_ATTR = /\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi;
+function rawCarries(html) {
+  const s = String(html ?? "");
+  if (!s.toLowerCase().includes(LECTURER_ONLY)) return false;
+  CLASS_ATTR.lastIndex = 0;
+  let m;
+  while (m = CLASS_ATTR.exec(s)) {
+    if (hasToken(m[1] ?? m[2] ?? m[3])) return true;
+  }
+  return false;
+}
+function carries(node) {
+  const type = node.type.name;
+  if (type === "raw" || type === "rawInline") return rawCarries(node.attrs.html);
+  if (hasToken(node.attrs?.cls)) return true;
+  return node.marks.some((mark) => hasToken(mark.attrs?.cls));
+}
+var KEPT_EMPTY = /* @__PURE__ */ new Set([
+  "doc",
+  "section",
+  "slide",
+  "lectureHead",
+  "tableCell",
+  "tableHeader",
+  "summary",
+  "figcaption"
+]);
+function hasLecturerOnly(doc) {
+  let found2 = false;
+  const walk = (node) => {
+    if (found2) return;
+    if (carries(node)) {
+      found2 = true;
+      return;
+    }
+    node.forEach(walk);
+  };
+  doc.forEach(walk);
+  return found2;
+}
+function strip2(node) {
+  if (carries(node)) return null;
+  if (node.isLeaf || !node.childCount) return node;
+  const kept = [];
+  let changed = false;
+  node.forEach((child) => {
+    const next = strip2(child);
+    if (next !== child) changed = true;
+    if (next) kept.push(next);
+  });
+  if (!changed) return node;
+  if (!kept.length && !KEPT_EMPTY.has(node.type.name)) return null;
+  return node.copy(Fragment.fromArray(kept));
+}
+function forAudience(doc, audience = "student") {
+  if (isStaff(audience)) return doc;
+  return strip2(doc);
+}
+function assertNoLecturerContent(html, opts = {}) {
+  const text2 = String(html ?? "");
+  if (!text2) return;
+  const document = parseDocument2(text2, opts);
+  for (const el of document.querySelectorAll("*")) {
+    for (const attr2 of Array.from(el.attributes ?? [])) {
+      if (String(attr2.name).toLowerCase() !== "class" || !hasToken(attr2.value)) continue;
+      const err = new Error(
+        `a ${String(el.tagName).toLowerCase()}.${LECTURER_ONLY} is still in a page written for students; nothing was written`
+      );
+      err.code = LECTURER_CONTENT;
+      throw err;
+    }
+  }
+}
+var STAFF_BODY_CLASS = "audience-staff";
+
 // studio/schema/src/shell.js
 var BOOT_COMMENT_NOTES = "  // Classic, not a module: the notes must read correctly even when this file\n  // is opened directly from disk. Only the demos need a server.";
 var BOOT_COMMENT_SLIDES = "<!-- Classic bundles, not modules: the deck must come up when this file is\n     double-clicked on a podium PC, and modules do not load from file://. -->";
 var trimBase = (b) => String(b ?? ".").replace(/\/+$/, "");
+var DRAFT_BODY_CLASS = "is-draft";
+function draftWhen(at, tz) {
+  const date = at instanceof Date ? at : new Date(at);
+  if (Number.isNaN(date.getTime())) throw new Error(`not a date for a draft stamp: ${String(at)}`);
+  const opts = {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  };
+  let fmt;
+  try {
+    fmt = new Intl.DateTimeFormat("en-GB", { ...opts, timeZone: tz || "UTC" });
+  } catch {
+    fmt = new Intl.DateTimeFormat("en-GB", { ...opts, timeZone: "UTC" });
+  }
+  const p = Object.fromEntries(fmt.formatToParts(date).map((part) => [part.type, part.value]));
+  return `${p.day}.${p.month}.${p.year} ${p.hour}:${p.minute}`;
+}
+function draftLine(draft, S) {
+  return S.draftStamp.replace("{when}", `⁦${draftWhen(draft.at, draft.tz)}⁩`);
+}
+var cssString = (s) => `"${String(s).replace(/[\\"<>&\n\r\f]/g, (c) => `\\${c.codePointAt(0).toString(16)} `)}"`;
+var draftStyle = (line2, lang) => `<style>body.${STAFF_BODY_CLASS}.${DRAFT_BODY_CLASS} .notes-head:lang(${lang})::after { content: ${cssString(line2)}; }</style>`;
 var DEFAULT_DEMOS_BASE = "demos";
 var faviconLink = (P) => `<link rel="icon" href="${P}/shared/favicon/favicon.svg" type="image/svg+xml">`;
 function themeLinks(P, course) {
@@ -17931,19 +18056,31 @@ function partition(doc) {
   doc.content.forEach((n) => (n.type.name === "lectureHead" && !head.length ? head : rest2).push(n));
   return { head: head[0] ?? null, rest: rest2 };
 }
-function shell({
+function shell(args2 = {}) {
+  const staff = isStaff(args2.audience);
+  if (args2.draft && !staff) {
+    throw new Error("a draft stamp is written on a staff page only: pass audience: 'staff' with draft");
+  }
+  const out = compose(args2, staff);
+  if (!staff) assertNoLecturerContent(out, { parse: args2.parse });
+  return out;
+}
+function compose({
   fragment,
   manifest = {},
   course = {},
   platformBase = ".",
   demosBase = DEFAULT_DEMOS_BASE,
   mode = "notes",
+  draft = null,
   parse: parse5
-} = {}) {
+}, staff) {
   const P = trimBase(platformBase);
   const D = trimBase(demosBase);
   const kind = mode === "slides" ? "slides" : "notes";
-  const { doc } = parseFragment(fragment, { kind, parse: parse5 });
+  const parsed = parseFragment(fragment, { kind, parse: parse5 });
+  const doc = forAudience(parsed.doc, staff ? "staff" : "student");
+  const lecturerCopy = staff && hasLecturerOnly(doc);
   const title = manifest.docTitle || manifest.title || "";
   const lang = langOf(course);
   const dir = courseDir(course);
@@ -18007,6 +18144,12 @@ function shell({
   ].join("\n");
   if (mode === "preview") return body + "\n";
   const hasDemos = Object.values(manifest.demos || {}).some(isFileDemo);
+  const stamped = Boolean(draft);
+  const bodyClass = [
+    "notes",
+    ...lecturerCopy || stamped ? [STAFF_BODY_CLASS] : [],
+    ...stamped ? [DRAFT_BODY_CLASS] : []
+  ].join(" ");
   return [
     "<!DOCTYPE html>",
     `<html dir="${dir}" lang="${lang}">`,
@@ -18017,10 +18160,11 @@ function shell({
     faviconLink(P),
     `<link rel="stylesheet" href="${P}/shared/vendor/katex/katex.min.css">`,
     ...themeLinks(P, course),
+    ...stamped ? [draftStyle(draftLine(draft, S), lang)] : [],
     `<script defer src="${P}/shared/vendor/katex/katex.min.js"></script>`,
     `<script defer src="${P}/shared/vendor/katex/contrib/auto-render.min.js"></script>`,
     "</head>",
-    '<body class="notes">',
+    `<body class="${bodyClass}">`,
     "",
     body,
     "",
@@ -18554,7 +18698,13 @@ async function writeDocuments(dir, lec, courseDoc, { platformBase, demosBase, on
       course: courseDoc,
       platformBase,
       demosBase,
-      mode: "notes"
+      mode: "notes",
+      // The author's own file, so it keeps the author's lecturer-only blocks
+      // (2026-10-12): `pull` is a working copy of the draft, and a pull that
+      // dropped them would make the next `push` delete them from the studio.
+      // The shell's default takes them out — that default is for pages a
+      // student gets, and nothing a student gets is written here.
+      audience: "staff"
     });
     await writeFile2(path6.join(dir, "notes.html"), notesHtml);
     written.push("notes.html");
@@ -18566,7 +18716,8 @@ async function writeDocuments(dir, lec, courseDoc, { platformBase, demosBase, on
       course: courseDoc,
       platformBase,
       demosBase,
-      mode: "slides"
+      mode: "slides",
+      audience: "staff"
     });
     await writeFile2(path6.join(dir, "slides.html"), slidesHtml);
     written.push("slides.html");
@@ -19510,6 +19661,27 @@ ${job.error ?? "(no error text)"}`, 4);
   return job;
 }
 
+// studio/cli/src/withdraw.js
+var enc = encodeURIComponent;
+async function withdrawLecture(client, { course, lecture, log = console.log } = {}) {
+  if (!course || !lecture) throw new CliError("usage: studio withdraw <course> <lecture>");
+  const res = await client.call(
+    "POST",
+    `/courses/${enc(course)}/lectures/${enc(lecture)}/withdraw`,
+    { body: {} }
+  );
+  if (res.status === 404) throw new CliError(`no lecture ${course}/${lecture} on ${client.origin}`, 2);
+  const site = expectOk(res, `POST ${course}/${lecture}/withdraw`);
+  const removed = (site.removed ?? []).length;
+  if (!removed && !(site.rewritten ?? []).length) {
+    log(`${course}/${lecture} is not published; nothing to withdraw`);
+    return site;
+  }
+  log(`withdrew ${course}/${lecture}: ${removed} published file${removed === 1 ? "" : "s"} removed`);
+  log("  students no longer see it. the draft is as it was; `studio publish` puts it back.");
+  return site;
+}
+
 // studio/cli/src/status.js
 var rel = (iso, now = Date.now()) => {
   if (!iso) return "-";
@@ -19825,7 +19997,7 @@ async function addressSet(client, { course, address, log = console.log } = {}) {
 }
 
 // studio/cli/src/delete.js
-var enc = encodeURIComponent;
+var enc2 = encodeURIComponent;
 function readLine2(input = process.stdin) {
   return new Promise((resolve, reject) => {
     let buffer = "";
@@ -19871,7 +20043,7 @@ async function deleteItem(client, {
   const spec = KINDS[kind];
   if (!spec) throw new CliError(`unknown kind: ${kind}`);
   if (!course || !id) throw new CliError(`usage: ${spec.usage}`);
-  const at = `/courses/${enc(course)}/${spec.segment}/${enc(id)}`;
+  const at = `/courses/${enc2(course)}/${spec.segment}/${enc2(id)}`;
   const got = await client.call("GET", at);
   if (got.status === 404) throw new CliError(`no ${kind} ${course}/${id} on ${client.origin}`, 2);
   const doc = expectOk(got, `GET ${course}/${id}`);
@@ -19887,7 +20059,7 @@ async function deleteItem(client, {
   if (String(typed ?? "").trim() !== confirmation) {
     throw new CliError(`that is not the title of ${course}/${id}; nothing was deleted`);
   }
-  const res = await client.call("DELETE", `${at}?confirm=${enc(confirmation)}`);
+  const res = await client.call("DELETE", `${at}?confirm=${enc2(confirmation)}`);
   if (res.status === 409 && res.json?.error === "exercise_has_submissions") {
     throw new CliError(
       `${apiMessage(res)}
@@ -20021,6 +20193,7 @@ var USAGE = `usage:
   studio notes   reopen [<lecture-dir>] <id>
   studio notes   delete [<lecture-dir>] <id>
   studio publish [<lecture-dir>]
+  studio withdraw <course> <lecture>              off the students' site; the draft stays
   studio status  [<lecture-dir>] [--course id] [--json]
   studio access  list                             [--json]
   studio access  grant  <email> <course> author|ta
@@ -20330,6 +20503,13 @@ try {
     case "publish": {
       const { dir, client, course, lecture, state } = await openLecture({ ...conn, dir: rest[0] ?? "." });
       await publishLecture(client, { course, lecture, dir, state });
+      break;
+    }
+    // The publish backwards (M55). It names the course and the lecture and
+    // takes no folder, like `lectures delete`; `src/withdraw.js` says why.
+    case "withdraw": {
+      const { client } = await openCourse();
+      await withdrawLecture(client, { course: rest[0], lecture: rest[1] });
       break;
     }
     case "status": {

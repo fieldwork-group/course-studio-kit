@@ -150,9 +150,40 @@ the generated id is for the studio's own *Add* menu and for a caller over
 HTTP.
 
 **Deleting one is a single verb and it leaves nothing behind** — the draft,
-and the published page too, because there is no *unpublish*. `studio_delete`
-does it, the title has to be repeated exactly as it reads, and it cannot be
-undone from the studio; ask the author before you call it, every time.
+and the published page too. `studio_delete` does it, the title has to be
+repeated exactly as it reads, and it cannot be undone from the studio; ask the
+author before you call it, every time.
+
+**Taking a published lecture down is a different verb: withdraw.** `POST
+/courses/{c}/lectures/{l}/withdraw`, or `studio_withdraw { course, lecture }`,
+takes the published copy off the students' site and keeps the draft exactly as
+it is. Offer it when the lecturer says a lecture that is already published is
+not ready — a week still being written, a page that went out too early — and
+**never reach for `studio_delete` to take a page down**: the delete removes the
+draft as well. Three things to tell them before you call it, because it is
+their class on the other end: students lose the page **at once** (it leaves the
+course's lecture list, and its link and its PDF stop working); nothing of the
+draft changes; and publishing puts it back. Then ask, as you ask before
+publishing, and call it only on a yes. It is safe to repeat — a lecture that is
+not published answers with three empty lists and nothing is written — and with
+a token it needs the `publish` scope, as publishing does.
+
+**A `div.lecturer-only` is never published.** It is a callout for the people
+teaching the lecture — a step for the board, a remark for the TAs — and the
+schema removes it, with everything in it, from every page written for
+students: the published notes and deck, and an exercise's questions as a
+student is sent them. It stays in the draft you read and write, in the draft
+preview, and in a second **lecturer's PDF** that a publish makes whenever the
+notes hold one (`GET …/lectures/{l}/lecturer-pdf`, an author's and a TA's).
+A PDF of the **draft** — the lecture as it is now, those blocks included,
+without publishing — is `POST …/lectures/{l}/draft-pdf` and then `GET` on the
+same path until it says `done`; it writes nothing to the site and is an
+author's and a TA's too.
+Two rules, and both are about not deciding for the author: **put nothing a
+student needs inside one** — the students' page must read as a complete page
+without it — and **do not move content into or out of one unasked**, because
+moving it out publishes it to the class and moving it in takes it away from
+them.
 
 What the fragment may contain is `docs/api/vocabulary.md`: every node, the
 classes that give it meaning, and a real example of each lifted from the
@@ -358,6 +389,12 @@ to it.
 are different: they are the lecturer's, the table of contents and every
 cross-reference use them, and they are kept verbatim.
 
+An `<h3>` that is a **direct child of a section** is a subsection: the table
+of contents lists it, folded, under its section, and gives it an anchor
+(`s4-2`) at boot if it has no `id`. An `<h3>` inside a box or a demo figure is
+that block's title and is not listed. Give a subsection an `id` of your own
+only if something links to it.
+
 ## Adding a figure
 
 Two steps. The bytes never pass through the API.
@@ -473,6 +510,10 @@ are unsure about, quote the sentence, and say what you would do.
 | `unsafe_markup` (422) | the fragment carried markup the schema would not emit; nothing was written |
 | `invalid_manifest` (400) | the manifest failed its schema; `path` is the JSON Pointer of the offending key |
 | `locked` (409) | someone has the lecture open. A courtesy, not a mutex — `If-Match` is what actually protects the save |
+| `lecturer_content_in_student_page` (500) | a publish, or a student's exercise sheet, would still have carried a `lecturer-only` element after the strip. Nothing was written or sent. It is the studio's fault, not the lecture's: tell the author |
+| `no_lecturer_copy` (404) | `GET …/lecturer-pdf` on a lecture whose last publish held no lecturer-only block, or whose PDF is still being made |
+| `draft_print_in_progress` (409) | `POST …/draft-pdf` while a PDF of that lecture's draft is being made (up to 150 s). Not a failure: `job` names it; poll `GET …/draft-pdf` |
+| `no_draft_print` (404) | `GET …/draft-pdf` on a lecture nobody has printed a draft of, or whose print has expired (two days). `POST` to make one |
 | `address_required` (409) | the course has no published address yet, and every student URL is that address. Its author sets one; you cannot |
 | `session_required` (403) | a route a held credential may not call at all — `/tokens`, `/access`, `POST /courses`, the course address, the reading cookie |
 | `course_read_only` (403) | the person's role on this course does not cover this — a TA saving a lecture, changing the course or its roster, or publishing |
@@ -565,6 +606,7 @@ studio_save_notes { course, lecture, fragment, etag, changedBlocks: ["K7F2Q9X1M0
 studio_preview_url { course, lecture }            → a link for the person to open
 studio_publish { course, lecture }                → { job }   ← ask them first
 studio_publish_status { course, lecture, job }
+studio_withdraw { course, lecture }               → { removed, … }  ← ask them first; the draft stays
 studio_delete { course, kind: "lecture", id, confirm: "<the title>" }  ← ask them first
 ```
 

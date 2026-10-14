@@ -59,6 +59,7 @@ any folder inside it — so nothing else has to hold it. An exported
 | `exercises delete <course> <exercise> [--yes "<title>"]` | delete a sheet — the questions and the key; asks for the title; refused once a student has answered it | 1 wrong title, or answered · 2 no such exercise |
 | `lectures delete <course> <lecture> [--yes "<title>"]` | delete a lecture — notes, deck, figures, the notes thread, and its published page; asks for the title | 1 wrong title · 2 no such lecture |
 | `publish [<lecture-dir>]` | publish and wait for the job | 4 job failed |
+| `withdraw <course> <lecture>` | take a published lecture off the students' site and **keep the draft**; `publish` puts it back. Not published is a line saying so | 2 no such lecture |
 | `import <lecture-dir>… [--course id] [--title "…"]` | first-time push of a lecture folder that the studio does not have yet | |
 | `login [--api <origin>]` | sign in with a browser instead of a token, cached in `~/.config/studio/` | 1 refused or timed out |
 | `tokens create \| list \| revoke` | mint and revoke access tokens — **a signed-in session, not a token** | |
@@ -100,7 +101,7 @@ courses/<course>/
 That is the same layout the studio's own repository uses, so the kit's demo
 tools work on it unchanged.
 
-Two things worth knowing about the pulled files:
+Four things worth knowing about the pulled files:
 
 - **`notes.html` is a page, not a fragment.** The `<head>` it carries points at
   the platform's stylesheets and scripts by a relative path that only resolves
@@ -118,6 +119,11 @@ Two things worth knowing about the pulled files:
 - **A push saves only what changed.** A document whose bytes the studio
   already holds is reported `unchanged` and not saved again; so is the
   manifest. A push with nothing to say writes no versions and no events.
+- **A `div.lecturer-only` comes down with the rest.** The studio removes those
+  blocks from every page a student gets; a pulled file is the draft, so it
+  keeps them, and a `push` sends them back. Put nothing a student needs
+  inside one, and do not move content into or out of one unasked: moving it
+  out publishes it to the class at the next publish.
 
 ## When a push is refused
 
