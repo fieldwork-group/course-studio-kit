@@ -593,6 +593,66 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '412': { $ref: '#/components/responses/precondition' }
 
+  /courses/{c}/weeks/{n}/withdraw:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - name: n
+        in: path
+        required: true
+        description: a week the course declares, 1–52
+        schema: { type: integer, minimum: 1, maximum: 52 }
+    post:
+      tags: [publish]
+      operationId: withdrawWeek
+      summary: Withdraw everything in a week — its lectures, its demos, and the exercises nobody has started.
+      description: |
+        **A bulk action on the week, not a state of it** (M60): `course.weeks`
+        gains nothing, and a week stays a heading. The items are the week's
+        rows exactly as the course page groups them (`groupByWeek`): the
+        lectures by their `week`, the exercises by theirs, and the demos by the
+        week `GET …/demos` computes — their own, or the earliest of the
+        lectures that wire them — so a demo that only inherits the week comes
+        down with it.
+
+        Each item is withdrawn as its own route would withdraw it — a lecture
+        and a demo leave the site, an exercise gets the `withdrawn` stamp —
+        and the course's front pages are written and the CDN purged **once**,
+        after all the keys are gone. Items that are not published are reported
+        `not_published` and left alone, so pressing it on a half-withdrawn week
+        finishes the job. **An exercise any student has started stays open**:
+        its item is `has_submissions` with the count of students.
+
+        **`?dry=1`** writes nothing at all — not a put, a delete, a purge or an
+        event — and answers the outcome each item would have. The studio's
+        confirm dialog calls it first.
+
+        An undeclared week is a `404`; a number that is not 1–52 is a `400`.
+        A token needs the `publish` scope as well as `write`. One event per
+        item that changed — `lecture.withdraw`, `demo.withdraw`,
+        `exercise.withdraw` — each carrying `week`.
+      parameters:
+        - name: dry
+          in: query
+          required: false
+          description: '`1` to answer what would happen and write nothing'
+          schema: { type: string, enum: ['1', 'true'] }
+      responses:
+        '200':
+          description: What came down, item by item. With `dry`, what would.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/WithdrawResult'
+                  - type: object
+                    properties:
+                      week: { type: integer }
+                      title: { type: [string, 'null'] }
+                      dry: { type: boolean }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+
   /courses/{c}/theme:
     parameters:
       - $ref: '#/components/parameters/course'
@@ -1642,29 +1702,20 @@ paths:
         course with no address has nothing on the site and answers the same
         three empty lists.
 
+        Since M60 the manifest also gets a `withdrawing` marker in the same
+        write that takes `published` off, and loses it once the front pages
+        are written: a call that finds it treats the lecture as published and
+        finishes the job, which a call after the stamp was gone could not do.
+        `items` names the lecture and its outcome.
+
         A token needs the `publish` scope as well as `write`, as for a
         publish. Event `lecture.withdraw`.
       responses:
         '200':
-          description: What came down. Three empty lists when nothing was published.
+          description: What came down. Three empty lists, and the item `not_published`, when nothing was published.
           content:
             application/json:
-              schema:
-                type: object
-                required: [removed, rewritten, paths]
-                properties:
-                  removed:
-                    type: array
-                    items: { type: string }
-                    description: the site keys that were deleted
-                  rewritten:
-                    type: array
-                    items: { type: string }
-                    description: the pages written again — the course's list, the landing, the demo pages
-                  paths:
-                    type: array
-                    items: { type: string }
-                    description: the CDN paths that were purged
+              schema: { $ref: '#/components/schemas/WithdrawResult' }
         '403': { $ref: '#/components/responses/forbidden' }
         '404': { $ref: '#/components/responses/notFound' }
         '412': { $ref: '#/components/responses/precondition' }
@@ -2218,6 +2269,85 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+
+  /courses/{c}/exercises/{x}/withdraw:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+    post:
+      tags: [exercises]
+      operationId: withdrawExercise
+      summary: Hide the exercise from the students — unless somebody has started it.
+      description: |
+        An exercise has no publish to undo: it reaches students through its
+        `release` window. So the withdraw writes `withdrawn: { at, by }` on
+        `exercise.json` (M60), and while it is there students see the exercise
+        exactly as one that has not opened yet — absent from the landing, a
+        `404` on every `/me/exercises/{x}` route. The course's test student
+        still sees it, with `withdrawn: true`. **The release dates are not
+        touched.** `POST …/return` is the way back.
+
+        **`409 exercise_has_submissions` while any student has work on it** —
+        any key under a real student's submission, a draft included — with
+        `submitted`, the delete's code and shape. The test student's trial run
+        does not count. The count is taken again after the stamp is written,
+        and a student who wrote in between takes the stamp off again.
+
+        Already withdrawn: `200`, item `already_withdrawn`, no write. Family
+        `exercises`, so a TA may. A token needs `publish`. Event
+        `exercise.withdraw`.
+      responses:
+        '200':
+          description: Withdrawn, or already. The manifest as it now stands, with its ETag.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/WithdrawResult'
+                  - type: object
+                    properties:
+                      exercise: { $ref: '#/components/schemas/Exercise' }
+                      etag: { type: string }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '409':
+          description: A student has started this exercise; it stays open. `submitted` is how many.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '412': { $ref: '#/components/responses/precondition' }
+
+  /courses/{c}/exercises/{x}/return:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/exercise'
+    post:
+      tags: [exercises]
+      operationId: returnExercise
+      summary: Give a withdrawn exercise back to the students.
+      description: |
+        Takes `withdrawn` off `exercise.json` under `If-Match` on the manifest
+        just read. An exercise that is not withdrawn is a `200` that writes
+        nothing (`returned: false`). The release dates are not touched, so an
+        exercise whose `release.from` is still ahead stays closed until then:
+        `opens` is that date, or null when it is open now. Family `exercises`;
+        a token needs `publish`. Event `exercise.return`.
+      responses:
+        '200':
+          description: Returned, or was not withdrawn.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [returned, exercise, etag]
+                properties:
+                  returned: { type: boolean }
+                  exercise: { $ref: '#/components/schemas/Exercise' }
+                  etag: { type: string }
+                  opens: { type: [string, 'null'], format: date-time }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '412': { $ref: '#/components/responses/precondition' }
 
   /courses/{c}/exercises/{x}/questions:
     parameters:
@@ -3330,6 +3460,42 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /courses/{c}/demos/{slug}/withdraw:
+    post:
+      tags: [publish, demos]
+      operationId: withdrawDemo
+      summary: Take the demo's page off the site and keep the draft.
+      description: |
+        The demo publish backwards (M60): `published` comes off `demo.json`,
+        the keys under `<address>/d/<slug>/` and `<address>/demos/<slug>/` are
+        deleted, the course index is rewritten without the demo's row, and the
+        CDN is purged once. **Published lectures that use the demo keep
+        showing it**: a lecture's publish copies the demo's files under the
+        lecture's own folder, and those copies are the lecture's. *Publish* on
+        the demo's page puts it back.
+
+        A `withdrawing` marker is written in the same put that takes
+        `published` off and removed once the index is written, so a call
+        after one that died half way finishes the job. A demo that is not
+        published answers `200` with item `not_published` and writes nothing.
+        A settings save that landed in between is a `412`.
+
+        The demo publish's family and scope: the course's author, and a token
+        with `publish`. There is **no MCP tool for it**, as there is none for
+        the demo publish. Event `demo.withdraw`.
+      parameters:
+        - { $ref: '#/components/parameters/course' }
+        - { $ref: '#/components/parameters/slug' }
+      responses:
+        '200':
+          description: What came down.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WithdrawResult' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '412': { $ref: '#/components/responses/precondition' }
+
   /courses/{c}/demos/{slug}/demo.html:
     get:
       summary: The draft document, served with the demo CSP and no x-frame-options
@@ -4093,6 +4259,12 @@ components:
             Present only for the **test student**, on an exercise whose
             `release.from` is still in the future. A real student does not see
             such an exercise at all.
+        withdrawn:
+          type: boolean
+          description: |
+            Present only for the **test student**, on an exercise its lecturer
+            has withdrawn (M60). A real student does not see such an exercise
+            at all.
 
     StudentExercise:
       type: object
@@ -4125,6 +4297,7 @@ components:
             write should send `If-None-Match: *`.
         testStudent: { type: boolean }
         notYetOpen: { type: boolean }
+        withdrawn: { type: boolean }
 
     StoredAsset:
       type: object
@@ -4382,6 +4555,46 @@ components:
           type: [string, 'null']
           description: "the week's name, in the course's language; null until somebody writes one"
 
+    WithdrawItem:
+      type: object
+      description: |
+        One item of a withdraw (M60). `outcome` is `withdrawn`; `not_published`
+        (a lecture or a demo that was not on the site, left alone);
+        `already_withdrawn` (an exercise); `has_submissions` (an exercise a
+        student has started, which stays open — `submitted` is how many
+        students); or `changed` (the manifest was saved while the withdraw ran
+        — nothing of it came down; press again). With `?dry=1`, the outcome it
+        would have had.
+      required: [kind, id, outcome]
+      properties:
+        kind: { type: string, enum: [lecture, demo, exercise] }
+        id: { type: string, description: "the lecture's or exercise's id, the demo's slug" }
+        title: { type: string }
+        outcome:
+          type: string
+          enum: [withdrawn, not_published, already_withdrawn, has_submissions, changed, not_found]
+        submitted: { type: integer, description: 'has_submissions: how many students have work on it' }
+
+    WithdrawResult:
+      type: object
+      required: [items, removed, rewritten, paths]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/WithdrawItem' }
+        removed:
+          type: array
+          items: { type: string }
+          description: the site keys that were deleted
+        rewritten:
+          type: array
+          items: { type: string }
+          description: the pages written again — the course's list, the landing, the demo pages
+        paths:
+          type: array
+          items: { type: string }
+          description: the CDN paths that were purged, in one invalidation
+
     Lecture:
       type: object
       description: |
@@ -4405,6 +4618,14 @@ components:
         demos: { $ref: '#/components/schemas/DemoMap' }
         slideDemos: { $ref: '#/components/schemas/DemoMap' }
         published: { $ref: '#/components/schemas/Published' }
+        withdrawing:
+          type: [string, 'null']
+          readOnly: true
+          description: |
+            The marker a withdraw leaves between taking `published` off and
+            writing the front pages again (M60). Server-owned: a body carrying
+            it is a `400`, a settings save carries it forward, a publish
+            removes it.
 
     DemoMap:
       type: object
@@ -4561,6 +4782,15 @@ components:
             released: { type: [string, 'null'], format: date-time }
         created: { type: [string, 'null'], readOnly: true }
         by: { type: [string, 'null'], readOnly: true }
+        withdrawn:
+          type: [object, 'null']
+          readOnly: true
+          description: |
+            Set by `POST …/withdraw`, removed by `POST …/return` (M60). While
+            it is there students see the exercise as one that has not opened.
+          properties:
+            at: { type: string, format: date-time }
+            by: { type: [string, 'null'] }
 
     ReviewTarget:
       type: object

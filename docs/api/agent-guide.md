@@ -97,6 +97,16 @@ publishing, and call it only on a yes. It is safe to repeat — a lecture that i
 not published answers with three empty lists and nothing is written — and with
 a token it needs the `publish` scope, as publishing does.
 
+**A demo, an exercise and a whole week are withdrawn in the studio, not from a
+chat.** The lecturer does those from the demo's page, the exercise's `⋯` and
+the week's `⋯`; there is no tool for them, as there is none for publishing a
+demo, and `studio_withdraw` is the lecture's alone. If the lecturer asks you to
+take a week down, say where the button is and what it does: the week's
+published lectures and demos leave the site, its exercises are hidden from the
+class unless a student has already started one (that one stays open), and the
+drafts stay as they are. A withdrawn demo stays inside the published lectures
+that use it; only its own page and its row on the course page come down.
+
 **A `div.lecturer-only` is never published.** It is a callout for the people
 teaching the lecture — a step for the board, a remark for the TAs — and the
 schema removes it, with everything in it, from every page written for
@@ -403,9 +413,10 @@ it flags code that can send data out of the page when the file is saved:
 if the line is yours by accident — a URL copied from a source, an example you
 were shown — take it out; if the demo needs it, tell the lecturer why.
 
-`published` is not yours, on a lecture or on a demo. The publish route writes
-it; a body carrying it is a `400`, and the stored value is kept for you when
-you leave it out.
+`published` is not yours, on a lecture or on a demo, and neither is
+`withdrawing` — the marker a withdraw leaves for the moment it runs — nor an
+exercise's `withdrawn`. The routes write them; a body carrying one is a `400`,
+and the stored value is kept for you when you leave it out.
 
 **Publishing a demo is the author's click, not a tool call.** A demo goes on
 the course site on purpose — `POST /courses/{c}/demos/{slug}/publish`, from the
@@ -535,7 +546,7 @@ studio_save_notes { course, lecture, fragment, etag, changedBlocks: ["K7F2Q9X1M0
 studio_preview_url { course, lecture }            → a link for the person to open
 studio_publish { course, lecture }                → { job }   ← ask them first
 studio_publish_status { course, lecture, job }
-studio_withdraw { course, lecture }               → { removed, … }  ← ask them first; the draft stays
+studio_withdraw { course, lecture }               → { items, removed, … }  ← ask them first; the draft stays
 studio_delete { course, kind: "lecture", id, confirm: "<the title>" }  ← ask them first
 ```
 

@@ -64,6 +64,28 @@
       ],
       "readOnly": true,
       "description": "who created it; written by the create route"
+    },
+    "withdrawn": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "readOnly": true,
+      "description": "written by `POST …/exercises/{x}/withdraw` and removed by `…/return` (M60): while it is set, students see the exercise exactly as one that has not opened yet. The release dates are not touched. A client body carrying it is a 400",
+      "properties": {
+        "at": {
+          "type": "string",
+          "description": "when it was withdrawn"
+        },
+        "by": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "who withdrew it"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "$defs": {

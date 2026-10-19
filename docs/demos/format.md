@@ -68,6 +68,15 @@ by that — the inheritance is computed when the library is read.
 `PUT` carrying it is a `400 read_only`. It is `{ at, version }` and it says
 that this demo is on the course site.
 
+`withdrawing` is the same kind of field (M60, 2026-10-19): an ISO timestamp
+the withdraw writes in the same put that takes `published` off, and removes
+once the course's index has been written again. A withdraw that finds it
+finishes the job; a publish removes it. It is refused in a body as
+`published` is, and carried forward by a `PUT` that leaves it out. Withdrawing
+a demo takes its own page and its row off the site and **leaves every
+published lecture that uses it as it is**: a lecture's publish copies the
+demo's `demo.html` and `still.png` into the lecture's own folder.
+
 ## What the page does with it
 
 The mount point in the lecture is a `<div id="demo-x">`, and it gets the

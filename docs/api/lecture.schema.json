@@ -94,6 +94,14 @@
         }
       },
       "additionalProperties": false
+    },
+    "withdrawing": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "readOnly": true,
+      "description": "when a withdraw began (M60): written in the same write that takes `published` off, removed once the front pages are written again. A call that finds it treats the lecture as still published and finishes the job. A client body carrying it is a 400"
     }
   },
   "$defs": {
