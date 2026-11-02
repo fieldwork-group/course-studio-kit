@@ -18622,7 +18622,7 @@ async function demosPush(client, demoDir, { course, log = console.log, stateless
       }
     }
   }
-  const { published, ...body } = manifest;
+  const { published, withdrawing, ...body } = manifest;
   const saved = await client.call("PUT", `/courses/${course}/demos/${slug}`, { body });
   if (saved.status === 412) throw new CliError(`demo.json: ${apiMessage(saved)}; run \`studio demos pull\` first`, 3);
   expectOk(saved, `PUT ${course}/demos/${slug}`);
@@ -19547,7 +19547,7 @@ async function pushLecture(client, lectureDir, { course, lecture, state, log = c
     throw new CliError(`no lecture ${c}/${id} on ${client.origin}; use \`studio import\``, 2);
   }
   const lec = expectOk(got, `GET ${c}/${id}`);
-  const { published, ...stored } = lec.manifest ?? {};
+  const { published, withdrawing, ...stored } = lec.manifest ?? {};
   const manifest = { ...stored, ...mergeManifests(notes.manifest, slides?.manifest), id };
   const etags = { ...state?.etags ?? {} };
   const saved = [];
@@ -19680,6 +19680,104 @@ async function withdrawLecture(client, { course, lecture, log = console.log } = 
   log(`withdrew ${course}/${lecture}: ${removed} published file${removed === 1 ? "" : "s"} removed`);
   log("  students no longer see it. the draft is as it was; `studio publish` puts it back.");
   return site;
+}
+var OUTCOMES = {
+  withdrawn: "withdrawn",
+  not_published: "not published; left alone",
+  already_withdrawn: "already withdrawn",
+  changed: "was being edited; nothing came down — try again",
+  not_found: "not found"
+};
+var outcomeText = (item, dry) => {
+  if (item.outcome === "has_submissions") {
+    const n = item.submitted ?? 1;
+    return `stays open: ${n} student${n === 1 ? " has" : "s have"} started it`;
+  }
+  if (dry && item.outcome === "withdrawn") return "would be withdrawn";
+  return OUTCOMES[item.outcome] ?? item.outcome;
+};
+function printItems(items, { dry = false, log = console.log } = {}) {
+  if (!items?.length) {
+    log("  nothing in it");
+    return;
+  }
+  const idWidth = Math.max(...items.map((i) => String(i.id).length));
+  for (const item of items) {
+    const title = item.title && item.title !== item.id ? ` — ${item.title}` : "";
+    log(`  ${item.kind.padEnd(8)}  ${String(item.id).padEnd(idWidth)}  ${outcomeText(item, dry)}${title}`);
+  }
+}
+async function withdrawDemo(client, { course, slug, json = false, log = console.log } = {}) {
+  if (!course || !slug) throw new CliError("usage: studio withdraw-demo <course> <slug>");
+  const res = await client.call("POST", `/courses/${enc(course)}/demos/${enc(slug)}/withdraw`, { body: {} });
+  if (res.status === 404) throw new CliError(`no demo ${slug} in ${course} on ${client.origin}`, 2);
+  if (res.status === 412) throw new CliError(`demo ${slug} was saved while it was being withdrawn; run it again`, 3);
+  const out = expectOk(res, `POST ${course}/demos/${slug}/withdraw`);
+  if (json) {
+    log(JSON.stringify(out, null, 2));
+    return out;
+  }
+  log(`withdraw demo ${course}/${slug}:`);
+  printItems(out.items, { log });
+  if (out.items?.[0]?.outcome === "withdrawn") {
+    log("  lectures that use it still show it. `studio demos publish` puts its page back.");
+  }
+  return out;
+}
+async function withdrawExercise(client, { course, exercise, json = false, log = console.log } = {}) {
+  if (!course || !exercise) throw new CliError("usage: studio withdraw-exercise <course> <exercise>");
+  const res = await client.call("POST", `/courses/${enc(course)}/exercises/${enc(exercise)}/withdraw`, { body: {} });
+  if (res.status === 404) throw new CliError(`no exercise ${exercise} in ${course} on ${client.origin}`, 2);
+  if (res.status === 409 && res.json?.error === "exercise_has_submissions") {
+    const n = res.json.submitted ?? 1;
+    throw new CliError(`${course}/${exercise} stays open: ${n} student${n === 1 ? " has" : "s have"} started it, and their work is the only copy of it`);
+  }
+  if (res.status === 412) throw new CliError(`${exercise} was saved while it was being withdrawn; run it again`, 3);
+  const out = expectOk(res, `POST ${course}/exercises/${exercise}/withdraw`);
+  if (json) {
+    log(JSON.stringify(out, null, 2));
+    return out;
+  }
+  log(`withdraw exercise ${course}/${exercise}:`);
+  printItems(out.items, { log });
+  if (out.items?.[0]?.outcome === "withdrawn") log("  students no longer see it. `studio return-exercise` gives it back.");
+  return out;
+}
+async function returnExercise(client, { course, exercise, json = false, log = console.log } = {}) {
+  if (!course || !exercise) throw new CliError("usage: studio return-exercise <course> <exercise>");
+  const res = await client.call("POST", `/courses/${enc(course)}/exercises/${enc(exercise)}/return`, { body: {} });
+  if (res.status === 404) throw new CliError(`no exercise ${exercise} in ${course} on ${client.origin}`, 2);
+  if (res.status === 412) throw new CliError(`${exercise} was saved at the same moment; run it again`, 3);
+  const out = expectOk(res, `POST ${course}/exercises/${exercise}/return`);
+  if (json) {
+    log(JSON.stringify(out, null, 2));
+    return out;
+  }
+  if (!out.returned) log(`${course}/${exercise} is not withdrawn; nothing to return`);
+  else if (out.opens) log(`returned ${course}/${exercise}. it opens to students on ${out.opens}.`);
+  else log(`returned ${course}/${exercise}. students see it again.`);
+  return out;
+}
+async function withdrawWeek(client, { course, week, dry = false, json = false, log = console.log } = {}) {
+  if (!course || week === void 0 || week === null || week === "") {
+    throw new CliError("usage: studio withdraw-week <course> <n> [--dry]");
+  }
+  const res = await client.call(
+    "POST",
+    `/courses/${enc(course)}/weeks/${enc(String(week))}/withdraw${dry ? "?dry=1" : ""}`,
+    { body: {} }
+  );
+  if (res.status === 404) throw new CliError(`${course} has no week ${week} on ${client.origin}`, 2);
+  const out = expectOk(res, `POST ${course}/weeks/${week}/withdraw`);
+  if (json) {
+    log(JSON.stringify(out, null, 2));
+    return out;
+  }
+  const name = out.title ? `week ${out.week} · ${out.title}` : `week ${out.week}`;
+  log(dry ? `withdraw ${course} ${name} — dry run, nothing changed:` : `withdraw ${course} ${name}:`);
+  printItems(out.items, { dry, log });
+  if (!dry) log("  the drafts are as they were.");
+  return out;
 }
 
 // studio/cli/src/status.js
@@ -20154,7 +20252,7 @@ async function notesDelete(client, dir, { course, lecture, id, log = console.log
 
 // studio/cli/bin/studio.js
 import path13 from "node:path";
-var BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["json", "open", "help", "version", "ta"]);
+var BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["json", "open", "help", "version", "ta", "dry"]);
 function parseArgs(argv) {
   const args2 = { _: [] };
   for (let i = 0; i < argv.length; i++) {
@@ -20194,6 +20292,10 @@ var USAGE = `usage:
   studio notes   delete [<lecture-dir>] <id>
   studio publish [<lecture-dir>]
   studio withdraw <course> <lecture>              off the students' site; the draft stays
+  studio withdraw-demo <course> <slug>            its page and its row; lectures keep showing it
+  studio withdraw-exercise <course> <exercise>    hidden from the class, unless a student started it
+  studio return-exercise <course> <exercise>      back to the class, on its own dates
+  studio withdraw-week <course> <n> [--dry]       the week's lectures, demos and unstarted exercises
   studio status  [<lecture-dir>] [--course id] [--json]
   studio access  list                             [--json]
   studio access  grant  <email> <course> author|ta
@@ -20510,6 +20612,33 @@ try {
     case "withdraw": {
       const { client } = await openCourse();
       await withdrawLecture(client, { course: rest[0], lecture: rest[1] });
+      break;
+    }
+    // The rest of the withdraws (M60), each naming its course and its item
+    // and taking no folder, for the reason `withdraw` takes none.
+    case "withdraw-demo": {
+      const { client } = await openCourse();
+      await withdrawDemo(client, { course: rest[0], slug: rest[1], json: Boolean(args.json) });
+      break;
+    }
+    case "withdraw-exercise": {
+      const { client } = await openCourse();
+      await withdrawExercise(client, { course: rest[0], exercise: rest[1], json: Boolean(args.json) });
+      break;
+    }
+    case "return-exercise": {
+      const { client } = await openCourse();
+      await returnExercise(client, { course: rest[0], exercise: rest[1], json: Boolean(args.json) });
+      break;
+    }
+    case "withdraw-week": {
+      const { client } = await openCourse();
+      await withdrawWeek(client, {
+        course: rest[0],
+        week: rest[1],
+        dry: Boolean(args.dry),
+        json: Boolean(args.json)
+      });
       break;
     }
     case "status": {
