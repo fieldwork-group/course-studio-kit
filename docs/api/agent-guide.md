@@ -54,8 +54,13 @@ makes a week exist before anything is in it and what gives its heading a name;
 setting *which* week a lecture or an exercise is in is a field on that item's
 own manifest (`week`), never a list you add it to. So put a lecture in week 3
 by writing `week: 3` on its `lecture.json`, and name week 3 with
-`PUT /courses/{c}/weeks` — which is a whole-list write, and refuses to remove a
-week something still carries.
+`studio_update_weeks { course, set: [{ n: 3, title }] }`. That tool is a merge:
+`set` adds a week or names one, `remove` takes one away, and every week you do
+not mention stays as it is — so when you file a lecture under a week the course
+does not declare yet, declare and name it in the same turn rather than leaving
+an untitled heading for the lecturer. The route underneath,
+`PUT /courses/{c}/weeks`, is a whole-list write under `If-Match`, and both
+refuse to remove a week something still carries (`409 week_in_use`).
 
 **A demo has a week too, and usually does not need one.** `demo.json` takes
 the same `week`, but a demo with none inherits the **earliest week of the
@@ -74,9 +79,13 @@ but `title` and `week`, is `400 invalid_manifest`. Use it when you are starting
 a lecture from nothing; use `PUT /courses/{c}/lectures/{l}` when you already
 have the whole thing and an id you mean to keep, which is what `studio import`
 does. There is no `studio_*` tool for the `POST` and it needs none: through the
-connector, a model that wants a lecture writes one with the id it chose, and
-the generated id is for the studio's own *Add* menu and for a caller over
-HTTP.
+connector, a model that wants a lecture writes one with the id it chose —
+`studio_update_manifest` first, then `studio_save_notes` with `etag: "*"` —
+and the generated id is for the studio's own *Add* menu and for a caller over
+HTTP. **The manifest save is what puts the lecture in the course**: it appends
+the id to the course's lecture list (at the end, never reordering) if it is not
+there yet, so write the manifest before the notes, and check
+`studio_get_course` lists it.
 
 **Deleting one is a single verb and it leaves nothing behind** — the draft,
 and the published page too. `studio_delete` does it, the title has to be

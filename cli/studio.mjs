@@ -20019,6 +20019,7 @@ async function rosterList(client, { course, json = false, log = console.log }) {
   if (doc.test) log(`test student  ${doc.test.sid}`);
   return doc;
 }
+var ROSTER_CHUNK = 100;
 async function rosterAdd(client, { course, emails = [], file, role = "student", log = console.log }) {
   if (!course) throw new CliError("usage: studio roster add <course> <email>… | --file <path> [--ta]");
   const list = [...emails];
@@ -20033,14 +20034,21 @@ async function rosterAdd(client, { course, emails = [], file, role = "student", 
   }
   const addresses = parseAddresses(list.join("\n"));
   if (!addresses.length) throw new CliError("no addresses: give them as arguments or with --file <path>");
-  const doc = ok2(
-    // `role` only when it is not the default, so the body a student add sends
-    // is the body it always sent.
-    await client.call("PUT", `/courses/${course}/roster`, {
-      body: role === "student" ? { emails: addresses } : { emails: addresses, role }
-    }),
-    `PUT /courses/${course}/roster`
-  );
+  const doc = { course, role, added: 0, present: 0, refused: [] };
+  for (let i = 0; i < addresses.length; i += ROSTER_CHUNK) {
+    const emails2 = addresses.slice(i, i + ROSTER_CHUNK);
+    const part = ok2(
+      // `role` only when it is not the default, so the body a student add sends
+      // is the body it always sent.
+      await client.call("PUT", `/courses/${course}/roster`, {
+        body: role === "student" ? { emails: emails2 } : { emails: emails2, role }
+      }),
+      `PUT /courses/${course}/roster`
+    );
+    doc.added += part.added ?? 0;
+    doc.present += part.present ?? 0;
+    doc.refused.push(...part.refused ?? []);
+  }
   log(`${course}: ${doc.added} added${role === "ta" ? " as TAs" : ""} · ${doc.present} already on the roster`);
   for (const r of doc.refused ?? []) log(`  refused  ${r.email}  ${r.reason}`);
   return doc;

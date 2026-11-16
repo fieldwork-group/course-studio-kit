@@ -2888,9 +2888,14 @@ paths:
           the student workspace adds a second address;
         - `identity_failed` — the pool refused; the log has the reason.
 
-        At most 500 addresses per call (`400 too_many`). Event `roster.add`,
-        one per address actually added, carrying the address and the `sid`
-        (or `ta`).
+        An address whose grant is there but whose line is not — a call that
+        died between the two — is added again (with the grant's date and
+        author), not counted as `present`, so a repeat paste repairs it.
+
+        At most 100 addresses per call (`400 too_many`) — what one call
+        finishes inside the API's thirty seconds; a class is several calls.
+        Event `roster.add`, one per address actually added, carrying the
+        address and the `sid` (or `ta`).
       requestBody:
         required: true
         content:
@@ -4172,9 +4177,9 @@ components:
         testStudent:
           type: boolean
           description: |
-            True when the caller is an author of the course, whose own `/me/`
-            **is** the course's test student. The workspace draws a banner on
-            it.
+            True when the caller is an author of the course (or an
+            administrator with no role on it), whose own `/me/` **is** the
+            course's test student. The workspace draws a banner on it.
         weeks:
           type: array
           description: Weeks ascending, the undated last — `byWeek` from `@studio/schema`.
