@@ -96,6 +96,22 @@ It is a block, not a section: a whole numbered `section` cannot be
 lecturer-only, because section numbers are written into the page and the
 students' copy would count 1, 2, 4.
 
+## Two references, for the syllabus
+
+Two attributes exist for the course's **syllabus** — the page students read,
+`GET /courses/{c}/syllabus` — and mean nothing anywhere else.
+
+- **`<a data-lecture="<lecture id>">`** is a link to a lecture of the course,
+  written as a *reference*: it carries **no `href`**. The address is worked
+  out when a page is written, and a lecture that is not published reads as
+  its text with no link, so a withdrawn lecture never leaves a dead one. An
+  `href` sent beside it is taken off on save. A value that is not shaped like
+  a lecture id is a `422`; an id that names no lecture is not an error.
+- **`<section data-week="<n>">`** says which teaching week (1–52) a section of
+  the syllabus stands for. `POST …/syllabus/generate` writes it and reads it
+  back to find where a newly published lecture's row goes. Keep it when you
+  edit the section; its heading is yours to reword.
+
 <!-- end hand-written -->
 
 ## Groups
@@ -130,7 +146,7 @@ What may go inside what. A content expression above names one of these.
 
 - **group** — `block`
 - **content** — `block+`
-- **attributes** — `id`, `anchor`, `num`, `title`
+- **attributes** — `id`, `anchor`, `week`, `num`, `title`
 - **gets a `data-id`** — yes
 - **in the lectures** — 115
 - **classes seen** — _none in the committed lectures_
@@ -530,7 +546,7 @@ factor)</span></span>` is real markup in both lectures.
 
 ### `link` — `<a>`
 
-- **attributes** — `href`, `cls`, `title`, `target`, `rel`, `demo`, `rep`, `show`
+- **attributes** — `href`, `cls`, `title`, `target`, `rel`, `demo`, `rep`, `show`, `lecture`
 - **in the lectures** — 14
 - **classes seen** — _none in the committed lectures_
 

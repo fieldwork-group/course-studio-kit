@@ -506,6 +506,59 @@ that lecture and writes no page and no index row. There is deliberately no MCP
 tool for it: what students see is not a decision a model makes. Write the
 draft, say it is ready, and let the lecturer press the button.
 
+## The syllabus
+
+A course may have a **syllabus**: the page students read to see what the term
+holds — the weeks, the lectures in them as links, the headings of each lecture
+under it. It is one more notes fragment, edited and saved like the notes, at
+course level:
+
+```
+GET    /courses/{c}/syllabus            → { body, etag, syllabus: { generated, published, edited } }
+PUT    /courses/{c}/syllabus            the whole fragment, If-Match (If-None-Match: * when there is none)
+POST   /courses/{c}/syllabus/generate   ?dry=1 to see what it would add
+POST   /courses/{c}/syllabus/publish    ← ask them first
+POST   /courses/{c}/syllabus/withdraw   ← ask them first; the draft stays
+DELETE /courses/{c}/syllabus            off the site, then gone: the way to start over
+```
+
+**Two things are called *syllabus*, and they are not the same thing.** The
+*guide* named `syllabus` (`GET /courses/{c}/guides/syllabus`, `studio_guides`)
+is the author's planning file: Markdown, the lecture list and its status,
+never published, read by nobody but the author and you. The *syllabus* here
+is the page students read. Asked to "update the syllabus", find out which one
+is meant before you write to either.
+
+**A link to a lecture is a reference, not a URL.** Write
+
+```html
+<a data-lecture="L03-coupled-oscillators">Coupled oscillators</a>
+```
+
+with **no `href`**. The server works the address out when the page is written:
+a published lecture gets its link, and one that is not published — or was
+withdrawn, or deleted — reads as plain text, so a link never goes dead. An
+`href` you send beside `data-lecture` is taken off. Never write a lecture's
+URL into the syllabus.
+
+**`generate` writes a first draft, and after that only adds.** The first run
+makes the whole document from the declared weeks and the **published**
+lectures; a draft lecture is not in it, and the headings under a lecture are
+the published page's, not the draft's. Every later run appends one row for
+each published lecture the document does not name yet, under the section whose
+`data-week` is that lecture's week, and changes nothing else. It will bring
+back a row the author deleted on purpose — so call it with `dry=1` first, show
+them the list, and write only when they say so. Anything bigger than adding a
+row is an edit: `GET`, change the fragment, `PUT`.
+
+Keep every `data-id`, `data-week` and `data-lecture` you were given: the week
+marker is how a later run finds where a lecture goes.
+
+**Saving and generating never publish.** The page on the site changes only on
+`publish`, which is the author's decision exactly as a lecture's is. The
+platform rewrites the published page by itself when a lecture is published or
+withdrawn, from what was last published and never from the draft.
+
 ## When you are not sure
 
 Leave a note on the block instead of guessing at the subject:
@@ -534,6 +587,8 @@ are unsure about, quote the sentence, and say what you would do.
 | `no_lecturer_copy` (404) | `GET …/lecturer-pdf` on a lecture whose last publish held no lecturer-only block, or whose PDF is still being made |
 | `draft_print_in_progress` (409) | `POST …/draft-pdf` while a PDF of that lecture's draft is being made (up to 150 s). Not a failure: `job` names it; poll `GET …/draft-pdf` |
 | `no_draft_print` (404) | `GET …/draft-pdf` on a lecture nobody has printed a draft of, or whose print has expired (two days). `POST` to make one |
+| `no_syllabus` (404) | the course has no syllabus yet. Not a failure: `POST …/syllabus/generate` writes a first draft, or `PUT` one with `If-None-Match: *` |
+| `reserved_lecture_id` (400) | a lecture may not be called `syllabus`, `d`, `demos`, `index.html` or `theme.css`: the course's site keeps those names for itself. Choose another id |
 | `address_required` (409) | the course has no published address yet, and every student URL is that address. Its author sets one; you cannot |
 | `session_required` (403) | a route a held credential may not call at all — `/tokens`, `/access`, `POST /courses`, the course address, the reading cookie |
 | `course_read_only` (403) | the person's role on this course does not cover this — a TA saving a lecture, changing the course or its roster, or publishing |
@@ -628,6 +683,10 @@ studio_publish { course, lecture }                → { job }   ← ask them fir
 studio_publish_status { course, lecture, job }
 studio_withdraw { course, lecture }               → { items, removed, … }  ← ask them first; the draft stays
 studio_delete { course, kind: "lecture", id, confirm: "<the title>" }  ← ask them first
+studio_syllabus { course, action: "get", sections: "all" }   → the students' syllabus page (not the guide)
+studio_syllabus { course, action: "generate", dry: true }    → what a run would add; then without `dry`
+studio_syllabus { course, action: "save", fragment, etag }
+studio_syllabus { course, action: "publish" | "withdraw" }   ← ask them first
 ```
 
 Three things about the tools that are not obvious from the names:
