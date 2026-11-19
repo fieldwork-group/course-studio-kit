@@ -75,6 +75,12 @@ tags:
     description: A sheet of questions, its private key, and what each question is worth.
   - name: grading
     description: Submissions, the review of one, the release and the gradebook. An author's.
+  - name: syllabus
+    description: |
+      The page a student reads to see what the term holds: generated from the
+      declared weeks and the published lectures, then edited, then published
+      on purpose. **Not the guide named `syllabus`** (`/courses/{c}/guides/syllabus`),
+      which is the author's planning file and is never published.
   - name: publish
     description: Draft to student-visible page.
   - name: threads
@@ -357,8 +363,9 @@ paths:
       description: |
         One request for the whole course page: `course.json`, a summary row
         per lecture (when it was last touched and by whom, whether it is
-        published, how many author notes are open, whether it has a deck), and
-        the names of the guides in the store.
+        published, how many author notes are open, whether it has a deck), the
+        names of the guides in the store, and one line about the **syllabus**:
+        `null` when the course has none, else whether it is on the site.
       responses:
         '200':
           description: The course.
@@ -375,6 +382,23 @@ paths:
                   guides:
                     type: array
                     items: { $ref: '#/components/schemas/GuideEntry' }
+                  syllabus:
+                    type: [object, 'null']
+                    description: |
+                      `null` when the course has no syllabus. The document
+                      itself is `GET /courses/{c}/syllabus`.
+                    required: [published, at, site]
+                    properties:
+                      published: { type: boolean, description: it is on the site }
+                      at:
+                        type: [string, 'null']
+                        format: date-time
+                        description: when it was published; `null` for a draft
+                      site:
+                        type: [string, 'null']
+                        description: >-
+                          the store key of the page's folder, as a lecture
+                          row's `site` is; `null` for a course with no address
         '404': { $ref: '#/components/responses/notFound' }
     put:
       tags: [courses]
@@ -851,6 +875,259 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/css' }
         '404': { $ref: '#/components/responses/notFound' }
+
+  /courses/{c}/syllabus:
+    parameters:
+      - $ref: '#/components/parameters/course'
+      - $ref: '#/components/parameters/ifMatch'
+      - $ref: '#/components/parameters/ifNoneMatch'
+      - $ref: '#/components/parameters/changedBlocks'
+      - $ref: '#/components/parameters/studioClient'
+    get:
+      tags: [syllabus]
+      operationId: getSyllabus
+      summary: The syllabus draft, its ETag and its state.
+      description: |
+        The course's syllabus — **the page students read**, not the guide of
+        the same name. A notes fragment: a `header.notes-head`, then one
+        `section` per week (`data-week="<n>"`) holding a list of lectures.
+
+        **A link to a lecture is a reference, not a URL**: the stored anchor
+        is `<a data-lecture="<lecture id>">` with **no `href`**. The address
+        is worked out when a page is written, and a lecture that is not
+        published reads as plain text there, so a withdraw never leaves a dead
+        link. An `href` sent beside `data-lecture` is taken off on save.
+
+        `syllabus.edited` is true when the draft is not what was last
+        published: the site page changes only on `POST …/syllabus/publish`.
+
+        An author and a TA. A course with no syllabus is `404 no_syllabus`.
+      responses:
+        '200':
+          description: The fragment and its state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [body, etag, syllabus, course]
+                properties:
+                  body: { type: string }
+                  etag: { type: string }
+                  versionId: { type: [string, 'null'] }
+                  syllabus: { $ref: '#/components/schemas/SyllabusState' }
+                  course:
+                    type: object
+                    description: what a page needs to draw the fragment
+                    properties:
+                      id: { type: string }
+                      title: { type: [string, 'null'] }
+                      lang: { type: string }
+                      dir: { type: string }
+                      address: { type: [string, 'null'] }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404':
+          description: '`no_syllabus` — the course has none yet; or no such course.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    put:
+      tags: [syllabus]
+      operationId: putSyllabus
+      summary: Save the whole syllabus fragment.
+      description: |
+        The same save as `PUT …/lectures/{l}/notes` — whole fragment,
+        `If-Match` required, normalised through the schema, `422
+        unsafe_markup` and `413 too_large` before anything is written. A
+        syllabus that does not exist yet is created with `If-None-Match: *`.
+
+        Keep every `data-id`, every `data-week` and every `data-lecture` you
+        were given. A `data-lecture` that is not shaped like a lecture id, or
+        a `data-week` outside 1–52, is a `422`; a `data-lecture` that names no
+        lecture of the course is **not** an error and reads as text.
+
+        Saving never publishes. Event `syllabus.save`.
+      requestBody:
+        required: true
+        content:
+          text/html:
+            schema: { type: string }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SaveResult' }
+        '400': { $ref: '#/components/responses/badRequest' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '412': { $ref: '#/components/responses/precondition' }
+        '422': { $ref: '#/components/responses/unsafeMarkup' }
+    delete:
+      tags: [syllabus]
+      operationId: deleteSyllabus
+      summary: Delete the syllabus, taking its page off the site first.
+      description: |
+        The page comes off the site if it is there (the withdraw's steps),
+        then the draft and its state are removed. The way to start over: the
+        next `generate` is a first run again. Event `syllabus.delete`.
+      responses:
+        '204':
+          description: Deleted.
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404':
+          description: '`no_syllabus`, or no such course.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /courses/{c}/syllabus/generate:
+    post:
+      tags: [syllabus]
+      operationId: generateSyllabus
+      summary: Write the first draft, or add the lectures the document is missing.
+      description: |
+        **First run** (the course has no syllabus): the whole draft — the
+        course title and the word *Syllabus* in the course's language; one
+        section per week, every **declared** week (an empty one is a heading
+        and nothing under it) and every week a published lecture carries;
+        under each, one row per **published** lecture: its number, its title
+        as `<a data-lecture>`, and the headings of its sections as plain text.
+        Lectures with no week go in a last *unscheduled* section; a course
+        with no weeks at all gets one section. `201`.
+
+        **Every later run only adds.** One row for each published lecture
+        that no `data-lecture` in the document names, at the end of the list
+        in the section whose `data-week` is the lecture's week (a section with
+        no list left gets one; a week with no section gets a section at the
+        end). Nothing else changes, not a byte. A row deleted on purpose is a
+        lecture the document does not name, so it comes back: run with
+        `dry=1` first and show the list.
+
+        **The headings are read off the published page**, never the draft.
+
+        The write is conditional on the document the run read — or on
+        `If-Match`, when it is sent — and a lost race is the `412` a save
+        answers. A later run with nothing to add writes nothing.
+
+        Generating never publishes. Event `syllabus.generate`, for a run that
+        wrote.
+      parameters:
+        - { $ref: '#/components/parameters/course' }
+        - { $ref: '#/components/parameters/ifMatch' }
+        - { $ref: '#/components/parameters/studioClient' }
+        - name: dry
+          in: query
+          description: >-
+            `1` or `true`: write nothing, log nothing, and answer what would
+            be added.
+          schema: { type: string, enum: ['1', 'true'] }
+      responses:
+        '200':
+          description: A later run, or any dry run.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyllabusGenerated' }
+        '201':
+          description: The first draft was written.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyllabusGenerated' }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404': { $ref: '#/components/responses/notFound' }
+        '412': { $ref: '#/components/responses/precondition' }
+
+  /courses/{c}/syllabus/publish:
+    post:
+      tags: [publish, syllabus]
+      operationId: publishSyllabus
+      summary: Publish the syllabus to `<address>/syllabus/`.
+      description: |
+        On purpose, by the course's author, and synchronously: no job, no PDF,
+        a `200`. It writes `<address>/syllabus/index.html` — the notes shell
+        around the fragment, each `data-lecture` reference resolved to
+        `/<address>/<lecture>/notes` when that lecture is published and to
+        plain text when it is not — and rewrites the course's front page,
+        which links the syllabus above its weeks while it is published.
+
+        **The page is written again whenever a lecture is published,
+        withdrawn or deleted**, from the fragment as it was published here and
+        never from later edits of the draft, so its links are always true and
+        an edit reaches students only through this route.
+
+        The same refusal as a lecture publish, `409 address_required`. The
+        first publish of anything in a course stamps `course.publishedFirst`,
+        which fixes the address.
+
+        A token needs `publish`. Event `syllabus.publish`.
+      parameters:
+        - { $ref: '#/components/parameters/course' }
+        - { $ref: '#/components/parameters/studioClient' }
+      responses:
+        '200':
+          description: Published.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, keys, published]
+                properties:
+                  url: { type: string, description: 'the page a student opens' }
+                  keys: { type: array, items: { type: string } }
+                  published:
+                    type: object
+                    properties:
+                      at: { type: string, format: date-time }
+                      by: { type: [string, 'null'] }
+                      etag: { type: string, description: the ETag of the draft that was published }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404':
+          description: '`no_syllabus`, or no such course.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: '`address_required` — the course has no published address.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /courses/{c}/syllabus/withdraw:
+    post:
+      tags: [publish, syllabus]
+      operationId: withdrawSyllabus
+      summary: Take the syllabus page off the site and keep the draft.
+      description: |
+        The publish backwards, in the order every withdraw keeps (M60): a
+        `withdrawing` marker in the write that takes `published` off, the page
+        deleted, the course's front page rewritten without its link, one
+        purge, the marker removed — so a call after one that died half way
+        finishes the job. A syllabus that is not on the site answers `200`
+        with `withdrawn: false` and writes nothing.
+
+        A token needs `publish`. Event `syllabus.withdraw`, when something
+        came down.
+      parameters:
+        - { $ref: '#/components/parameters/course' }
+        - { $ref: '#/components/parameters/studioClient' }
+      responses:
+        '200':
+          description: What came down.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [withdrawn, removed, rewritten, paths]
+                properties:
+                  withdrawn: { type: boolean }
+                  removed: { type: array, items: { type: string }, description: the site keys that were deleted }
+                  rewritten: { type: array, items: { type: string }, description: the front pages written again }
+                  paths: { type: array, items: { type: string }, description: the CDN paths purged }
+        '403': { $ref: '#/components/responses/forbidden' }
+        '404':
+          description: '`no_syllabus`, or no such course.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /courses/{c}/lectures:
     parameters:
@@ -4180,6 +4457,15 @@ components:
             True when the caller is an author of the course (or an
             administrator with no role on it), whose own `/me/` **is** the
             course's test student. The workspace draws a banner on it.
+        syllabus:
+          type: object
+          description: |
+            Present **only while the course's syllabus is published**; a draft
+            is absent from the answer, as a draft lecture is.
+          required: [published, url]
+          properties:
+            published: { type: boolean, const: true }
+            url: { type: string, description: 'the page on the site, `<site>/<address>/syllabus/`' }
         weeks:
           type: array
           description: Weeks ascending, the undated last — `byWeek` from `@studio/schema`.
@@ -4736,6 +5022,52 @@ components:
         size: { type: [integer, 'null'] }
         lastModified: { type: [string, 'null'], format: date-time }
         etag: { type: [string, 'null'] }
+
+    SyllabusState:
+      type: object
+      description: |
+        The syllabus's server-owned state (`syllabus.json`), and one derived
+        fact.
+      required: [generated, published, edited]
+      properties:
+        generated:
+          type: [object, 'null']
+          description: the last `generate` run that wrote; `null` for one written by hand
+          properties:
+            at: { type: string, format: date-time }
+            by: { type: [string, 'null'] }
+        published:
+          type: [object, 'null']
+          description: '`null` while it is a draft'
+          properties:
+            at: { type: string, format: date-time }
+            by: { type: [string, 'null'] }
+            etag: { type: string }
+        edited:
+          type: boolean
+          description: published, and the draft has been saved since
+
+    SyllabusGenerated:
+      type: object
+      required: [created, added, etag, dry]
+      properties:
+        created: { type: boolean, description: this was (or would be) the first draft }
+        added:
+          type: array
+          description: the lectures given a row — with `dry`, the ones that would be
+          items:
+            type: object
+            required: [id, number, title, week]
+            properties:
+              id: { type: string }
+              number: { type: [integer, string, 'null'] }
+              title: { type: string }
+              week: { type: [integer, 'null'] }
+        etag:
+          type: [string, 'null']
+          description: the document's ETag now; `null` on a dry first run
+        versionId: { type: [string, 'null'] }
+        dry: { type: boolean }
 
     StoredDocument:
       type: [object, 'null']

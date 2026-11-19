@@ -49,7 +49,7 @@ any folder inside it — so nothing else has to hold it. An exported
 | `init [<dir>]` | the folder above: prompt, verify, `.env`, `.studio/config.json`, `.gitignore` | 1 refused or already tracked |
 | `kit-path` | where this kit is installed, one line | 2 not running from the kit |
 | `status [<dir>] [--course id] [--json]` | who the credential says you are, then per lecture: lock holder, open notes, unpulled changes, last event, published | |
-| `pull <course> [<into-dir>]` | the whole course into `courses/<id>/` — guides, demos, exercises, every lecture | 2 no such course |
+| `pull <course> [<into-dir>]` | the whole course into `courses/<id>/` — guides, the syllabus page (`syllabus.html`), demos, exercises, every lecture | 2 no such course |
 | `pull <lecture-dir>` | one lecture, and the demos it wires | 2 no such lecture |
 | `push [<lecture-dir>]` | the working copy back, with the ETags `pull` recorded; never merges | 2 never pulled · 3 conflict, pull first |
 | `notes list \| add \| reply \| done \| reopen \| delete` | the author-notes thread — where an agent asks instead of guessing | 2 no such note |
@@ -88,6 +88,7 @@ one field to change.
 ```
 courses/<course>/
   conventions.md  glossary.md  style.md  syllabus.md   the course's guides
+  syllabus.html                                        the syllabus students read, when there is one (pulled, not pushed)
   demos/<slug>/   demo.json · demo.html · still.png    one self-contained file each
   lectures/<lecture>/
     notes.html      the lecture, as a page

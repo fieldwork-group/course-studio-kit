@@ -16408,19 +16408,25 @@ var nodes = {
     toDOM: (n) => ["header", { class: "notes-head", "data-id": n.attrs.id }, 0]
   },
   /** A numbered notes section. `<h2><span class="n">3</span><span class="t">…</span></h2>`
-   *  is rendered from `num`/`title`, not editable as free markup. */
+   *  is rendered from `num`/`title`, not editable as free markup.
+   *
+   *  `week` is `data-week` (2026-11-18): a section of a course's syllabus
+   *  that stands for one teaching week says which, so a later *add missing
+   *  lectures* run can find where a lecture goes without reading the heading
+   *  an author is free to reword (`syllabus.js`). A string, as every
+   *  attribute read off markup is. */
   section: {
     content: "block+",
     group: "block",
     defining: true,
-    attrs: { id: A.id, anchor: { default: null }, num: { default: "" }, title: { default: "" } },
+    attrs: { id: A.id, anchor: { default: null }, week: { default: null }, num: { default: "" }, title: { default: "" } },
     html: {
       tag: "section",
       content: "block",
-      attrs: (n) => pairs(["id", n.attrs.anchor], ["data-id", n.attrs.id])
+      attrs: (n) => pairs(["id", n.attrs.anchor], ["data-week", n.attrs.week], ["data-id", n.attrs.id])
     },
-    parseDOM: [{ tag: "section" }],
-    toDOM: (n) => ["section", { id: n.attrs.anchor, "data-id": n.attrs.id }, 0]
+    parseDOM: [{ tag: "section", getAttrs: (d) => ({ week: d.getAttribute("data-week") }) }],
+    toDOM: (n) => ["section", { id: n.attrs.anchor, "data-week": n.attrs.week, "data-id": n.attrs.id }, 0]
   },
   /** A reveal slide. */
   slide: {
@@ -16693,8 +16699,15 @@ var nodes = {
   }
 };
 var marks = {
+  /**
+   * `lecture` is `data-lecture` (2026-11-18): **a reference to a lecture of
+   * the course, not a URL**. A stored anchor that carries it has no `href` —
+   * `normalise` takes one off (`sanitise.js`) — and the address is worked out
+   * when a page is written (`resolveSyllabus`, `syllabus.js`), so a lecture
+   * that leaves the site becomes plain text instead of a dead link.
+   */
   link: {
-    attrs: { href: { default: "" }, cls: A.cls, title: { default: null }, target: { default: null }, rel: { default: null }, demo: { default: null }, rep: { default: null }, show: { default: null } },
+    attrs: { href: { default: "" }, cls: A.cls, title: { default: null }, target: { default: null }, rel: { default: null }, demo: { default: null }, rep: { default: null }, show: { default: null }, lecture: { default: null } },
     inclusive: false,
     html: {
       tag: "a",
@@ -16706,11 +16719,12 @@ var marks = {
         ["rel", m.attrs.rel],
         ["data-demo", m.attrs.demo],
         ["data-rep", m.attrs.rep],
-        ["data-show", m.attrs.show]
+        ["data-show", m.attrs.show],
+        ["data-lecture", m.attrs.lecture]
       )
     },
     parseDOM: [{
-      tag: "a[href]",
+      tag: "a[href], a[data-lecture]",
       getAttrs: (d) => ({
         href: d.getAttribute("href") || "",
         cls: d.getAttribute("class"),
@@ -16719,10 +16733,11 @@ var marks = {
         rel: d.getAttribute("rel"),
         demo: d.getAttribute("data-demo"),
         rep: d.getAttribute("data-rep"),
-        show: d.getAttribute("data-show")
+        show: d.getAttribute("data-show"),
+        lecture: d.getAttribute("data-lecture")
       })
     }],
-    toDOM: (m) => ["a", { href: m.attrs.href, class: m.attrs.cls, "data-demo": m.attrs.demo, "data-rep": m.attrs.rep, "data-show": m.attrs.show }, 0]
+    toDOM: (m) => ["a", { href: m.attrs.href, class: m.attrs.cls, "data-demo": m.attrs.demo, "data-rep": m.attrs.rep, "data-show": m.attrs.show, "data-lecture": m.attrs.lecture }, 0]
   },
   span: {
     attrs: { cls: A.cls, style: A.style, dir: { default: null } },
@@ -16991,7 +17006,8 @@ function markAttrs(name, el) {
         rel: attr(el, "rel"),
         demo: attr(el, "data-demo"),
         rep: attr(el, "data-rep"),
-        show: attr(el, "data-show")
+        show: attr(el, "data-show"),
+        lecture: attr(el, "data-lecture")
       };
     case "span":
       return { cls: attr(el, "class"), style: attr(el, "style"), dir: attr(el, "dir") };
@@ -17163,7 +17179,13 @@ function parseBlockElement(el, ctx, noMath) {
       } else {
         content = block();
       }
-      return N.section.create({ id: idAttr(el), anchor: attr(el, "id"), num, title }, content);
+      return N.section.create({
+        id: idAttr(el),
+        anchor: attr(el, "id"),
+        week: attr(el, "data-week"),
+        num,
+        title
+      }, content);
     }
     case "h1":
     case "h2":
@@ -17806,6 +17828,10 @@ var STRINGS = {
     week: "שבוע",
     /** …and over the lectures that belong to no week yet */
     unscheduled: "ללא שבוע",
+    /** the course's syllabus (2026-11-18): the line under the course title on
+     *  the page itself, its `<title>`, and the link to it at the top of the
+     *  course's front page */
+    syllabus: "סילבוס",
     /** the word a lecture's `docTitle` opens with — `הרצאה 2 — …`, the title
      *  of the document a student opens (`lectureDocTitle` below) */
     lecture: "הרצאה",
@@ -17857,6 +17883,7 @@ var STRINGS = {
     courses: "Courses",
     week: "Week",
     unscheduled: "Unscheduled",
+    syllabus: "Syllabus",
     lecture: "Lecture",
     noCourses: "No course has been published here yet.",
     demo: "Demo",
@@ -18177,6 +18204,9 @@ function compose({
     ""
   ].join("\n");
 }
+
+// studio/schema/src/syllabus.js
+init_dom();
 
 // studio/schema/src/notes-md.js
 var GENERAL = "\0general";
@@ -18954,6 +18984,7 @@ async function grantAuthor(client, course, email, log) {
 }
 
 // studio/cli/src/pull-course.js
+import fs9 from "node:fs/promises";
 import path9 from "node:path";
 
 // studio/cli/src/exercises.js
@@ -19138,6 +19169,17 @@ async function exercisesPush(client, exerciseDir, {
 
 // studio/cli/src/pull-course.js
 var courseDirIn = (into, course) => path9.join(path9.resolve(into), "courses", course);
+async function pullSyllabus(client, course, courseDir2, { log = console.log } = {}) {
+  const res = await client.call("GET", `/courses/${encodeURIComponent(course)}/syllabus`);
+  if (res.status === 404) return null;
+  if (res.status >= 300) {
+    log(`  ! syllabus.html: ${res.status} ${apiMessage(res)}`);
+    return null;
+  }
+  await fs9.mkdir(courseDir2, { recursive: true });
+  await fs9.writeFile(path9.join(courseDir2, "syllabus.html"), res.json.body);
+  return "syllabus.html";
+}
 async function pullCourse(client, { course, into = ".", log = console.log } = {}) {
   if (!course) throw new CliError("usage: studio pull <course> [<into-dir>]");
   const got = await client.call("GET", `/courses/${encodeURIComponent(course)}`);
@@ -19149,6 +19191,8 @@ async function pullCourse(client, { course, into = ".", log = console.log } = {}
   const guides = await pullGuides(client, course, courseDir2, { log });
   for (const f of guides.written) log(`  ${f}`);
   if (guides.same.length) log(`  (${guides.same.length} guide(s) unchanged)`);
+  const syllabus = await pullSyllabus(client, course, courseDir2, { log });
+  if (syllabus) log(`  ${syllabus}`);
   const demos = await demosPull(client, courseDir2, { course, announce: false, log });
   for (const f of demos.written) log(`  demos/${f}`);
   const exercises = await exercisesPull(client, courseDir2, { course, announce: false, log });
@@ -19172,11 +19216,19 @@ async function pullCourse(client, { course, into = ".", log = console.log } = {}
   }
   log("");
   log(`${course}: ${pulled.length} lecture(s), ${exercises.exercises.length} exercise(s), ${demos.demos.length} demo(s), ${guides.written.length + guides.same.length} guide(s)`);
-  return { dir: courseDir2, course, lectures: pulled, exercises: exercises.exercises, demos: demos.demos, guides };
+  return {
+    dir: courseDir2,
+    course,
+    lectures: pulled,
+    exercises: exercises.exercises,
+    demos: demos.demos,
+    guides,
+    syllabus: Boolean(syllabus)
+  };
 }
 
 // studio/cli/src/init.js
-import fs9 from "node:fs/promises";
+import fs10 from "node:fs/promises";
 import path10 from "node:path";
 import { execFileSync } from "node:child_process";
 
@@ -19368,7 +19420,7 @@ function courseList(me) {
 }
 var exists = async (p) => {
   try {
-    await fs9.stat(p);
+    await fs10.stat(p);
     return true;
   } catch {
     return false;
@@ -19445,17 +19497,17 @@ ${hint}`);
     courses,
     initialised: (/* @__PURE__ */ new Date()).toISOString()
   };
-  await fs9.mkdir(path10.join(root, ".studio"), { recursive: true });
-  await fs9.writeFile(path10.join(root, CONFIG_FILE), `${JSON.stringify(config, null, 2)}
+  await fs10.mkdir(path10.join(root, ".studio"), { recursive: true });
+  await fs10.writeFile(path10.join(root, CONFIG_FILE), `${JSON.stringify(config, null, 2)}
 `, "utf8");
   const envPath = path10.join(root, ENV_FILE2);
-  const current = await fs9.readFile(envPath, "utf8").catch(() => null);
-  await fs9.writeFile(envPath, withToken(current, secret), { encoding: "utf8", mode: 384 });
-  await fs9.chmod(envPath, 384).catch(() => {
+  const current = await fs10.readFile(envPath, "utf8").catch(() => null);
+  await fs10.writeFile(envPath, withToken(current, secret), { encoding: "utf8", mode: 384 });
+  await fs10.chmod(envPath, 384).catch(() => {
   });
   const ignorePath = path10.join(root, ".gitignore");
-  const ignore = withIgnores(await fs9.readFile(ignorePath, "utf8").catch(() => null));
-  if (ignore.added.length) await fs9.writeFile(ignorePath, ignore.text, "utf8");
+  const ignore = withIgnores(await fs10.readFile(ignorePath, "utf8").catch(() => null));
+  if (ignore.added.length) await fs10.writeFile(ignorePath, ignore.text, "utf8");
   const row = (name, said) => log(`  ${name.padEnd(20)}${said}`);
   log(`${root} is set up for ${describeIdentity(me)}`);
   row(ENV_FILE2, `${ENV_KEY}, mode 600 — not printed here, not committed`);
@@ -19475,14 +19527,14 @@ ${hint}`);
 }
 
 // studio/cli/src/kit.js
-import fs10 from "node:fs";
+import fs11 from "node:fs";
 import path11 from "node:path";
 import { fileURLToPath } from "node:url";
 var MARKERS = ["AGENTS.md", path11.join("docs", "demos", "format.md")];
 function kitPath(from = fileURLToPath(import.meta.url)) {
   let dir = path11.dirname(path11.resolve(from));
   for (let i = 0; i < 6; i++) {
-    if (MARKERS.every((m) => fs10.existsSync(path11.join(dir, m)))) return dir;
+    if (MARKERS.every((m) => fs11.existsSync(path11.join(dir, m)))) return dir;
     const up = path11.dirname(dir);
     if (up === dir) break;
     dir = up;
@@ -19502,11 +19554,11 @@ function printKitPath({ log = console.log } = {}) {
 }
 
 // studio/cli/src/push.js
-import fs11 from "node:fs/promises";
+import fs12 from "node:fs/promises";
 import path12 from "node:path";
 async function readIf5(file) {
   try {
-    return await fs11.readFile(file, "utf8");
+    return await fs12.readFile(file, "utf8");
   } catch {
     return null;
   }
@@ -19972,7 +20024,7 @@ var summarise = (roles) => {
 };
 
 // studio/cli/src/roster.js
-import fs12 from "node:fs/promises";
+import fs13 from "node:fs/promises";
 function parseAddresses(text2) {
   return String(text2 ?? "").split(/[\s,;]+/).map((part) => part.trim().replace(/^.*</, "").replace(/>.*$/, "")).filter(Boolean);
 }
@@ -20026,7 +20078,7 @@ async function rosterAdd(client, { course, emails = [], file, role = "student", 
   if (file) {
     let text2;
     try {
-      text2 = await fs12.readFile(file, "utf8");
+      text2 = await fs13.readFile(file, "utf8");
     } catch (err) {
       throw new CliError(`cannot read ${file}: ${err.message}`);
     }
